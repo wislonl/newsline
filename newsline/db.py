@@ -10,13 +10,13 @@ import json
 import os
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterator, Optional
 
 from .models import ContentItem, SourceType
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Python 3.12 removed default datetime adapters from sqlite3. Register explicit
 # ISO-8601 ones so TIMESTAMP columns round-trip cleanly.
@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS content_items (
     ai_reason       TEXT,
     ai_summary      TEXT,
     ai_tags         TEXT,                       -- JSON array
+    entities        TEXT,                       -- JSON array of extracted entities
 
     story_id        TEXT                        -- nullable, populated in M1
 );
@@ -65,6 +66,15 @@ CREATE TABLE IF NOT EXISTS stories (
 );
 
 CREATE INDEX IF NOT EXISTS idx_stories_status ON stories(status, last_updated_at DESC);
+
+-- M1: normalized entity index for cheap story candidate lookup
+CREATE TABLE IF NOT EXISTS story_entities (
+    story_id    TEXT NOT NULL,
+    entity      TEXT NOT NULL,
+    PRIMARY KEY (story_id, entity),
+    FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_story_entities_entity ON story_entities(entity);
 
 -- M3 placeholder
 CREATE TABLE IF NOT EXISTS user_signals (
@@ -96,9 +106,15 @@ class Database:
     def _init_schema(self) -> None:
         with self.conn() as c:
             c.executescript(SCHEMA)
+            # idempotent column add for pre-v2 databases
+            cols = {r["name"] for r in c.execute("PRAGMA table_info(content_items)").fetchall()}
+            if "entities" not in cols:
+                c.execute("ALTER TABLE content_items ADD COLUMN entities TEXT")
             row = c.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 c.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+            else:
+                c.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
     @contextmanager
     def conn(self) -> Iterator[sqlite3.Connection]:
@@ -167,6 +183,117 @@ class Database:
         with self.conn() as c:
             return [self._row_to_item(r) for r in c.execute(sql, args).fetchall()]
 
+    def items_needing_storyline(self, min_score: float = 6.0, limit: int = 100) -> list[ContentItem]:
+        """Scored items above threshold that haven't been attached to a story yet."""
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT * FROM content_items
+                 WHERE ai_score IS NOT NULL AND ai_score >= ?
+                   AND story_id IS NULL
+                 ORDER BY published_at DESC
+                 LIMIT ?
+                """,
+                (min_score, limit),
+            ).fetchall()
+            return [self._row_to_item(r) for r in rows]
+
+    def set_item_entities(self, item_id: str, entities: list[str]) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE content_items SET entities = ? WHERE id = ?",
+                      (json.dumps(entities), item_id))
+
+    def attach_item_to_story(self, item_id: str, story_id: str, when: datetime) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE content_items SET story_id = ? WHERE id = ?", (story_id, item_id))
+            c.execute("UPDATE stories SET last_updated_at = ? WHERE id = ?", (when, story_id))
+
+    # ---- stories ------------------------------------------------------------
+
+    def create_story(self, *, story_id: str, title: str, summary: str | None,
+                     entities: list[str], when: datetime) -> None:
+        with self.conn() as c:
+            c.execute(
+                """
+                INSERT INTO stories
+                  (id, title, summary, status, entities, first_seen_at, last_updated_at)
+                VALUES (?, ?, ?, 'active', ?, ?, ?)
+                """,
+                (story_id, title, summary, json.dumps(entities), when, when),
+            )
+            c.executemany(
+                "INSERT OR IGNORE INTO story_entities (story_id, entity) VALUES (?, ?)",
+                [(story_id, e) for e in entities],
+            )
+
+    def candidate_stories(self, entities: list[str], days: int = 30,
+                          limit: int = 5) -> list[dict]:
+        """Find recent active stories ranked by entity overlap count."""
+        if not entities:
+            return []
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        placeholders = ",".join("?" * len(entities))
+        with self.conn() as c:
+            rows = c.execute(
+                f"""
+                SELECT s.id, s.title, s.summary, s.last_updated_at,
+                       COUNT(se.entity) AS overlap
+                  FROM stories s
+                  JOIN story_entities se ON se.story_id = s.id
+                 WHERE s.status = 'active'
+                   AND s.last_updated_at >= ?
+                   AND se.entity IN ({placeholders})
+              GROUP BY s.id
+              ORDER BY overlap DESC, s.last_updated_at DESC
+                 LIMIT ?
+                """,
+                (cutoff, *entities, limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def active_stories(self, limit: int = 50) -> list[dict]:
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT s.id, s.title, s.summary, s.first_seen_at, s.last_updated_at,
+                       COUNT(ci.id) AS event_count,
+                       MAX(ci.ai_score) AS top_score
+                  FROM stories s
+                  LEFT JOIN content_items ci ON ci.story_id = s.id
+                 WHERE s.status = 'active'
+              GROUP BY s.id
+              ORDER BY s.last_updated_at DESC
+                 LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def resolve_story_id(self, prefix: str) -> str | None:
+        """Find a story by id prefix (≥4 chars). Returns None on miss or ambiguity."""
+        if len(prefix) < 4:
+            return None
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT id FROM stories WHERE id LIKE ? LIMIT 2",
+                (prefix + "%",),
+            ).fetchall()
+        if len(rows) != 1:
+            return None
+        return rows[0]["id"]
+
+    def story_events(self, story_id: str) -> list[ContentItem]:
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT * FROM content_items
+                 WHERE story_id = ?
+                 ORDER BY published_at ASC
+                """,
+                (story_id,),
+            ).fetchall()
+            return [self._row_to_item(r) for r in rows]
+
     def top_items(self, limit: int = 20, min_score: float = 0.0) -> list[ContentItem]:
         with self.conn() as c:
             rows = c.execute(
@@ -196,5 +323,6 @@ class Database:
             ai_reason=r["ai_reason"],
             ai_summary=r["ai_summary"],
             ai_tags=json.loads(r["ai_tags"]) if r["ai_tags"] else [],
+            entities=json.loads(r["entities"]) if r["entities"] else [],
             story_id=r["story_id"],
         )

@@ -30,15 +30,18 @@ def cli(ctx: click.Context, config_path: Path) -> None:
 @cli.command()
 @click.option("--hours", type=int, default=None, help="Override fetch window")
 @click.option("--no-score", is_flag=True, help="Skip AI scoring step")
+@click.option("--no-match", is_flag=True, help="Skip storyline matching step")
 @click.pass_context
-def run(ctx: click.Context, hours: int | None, no_score: bool) -> None:
-    """Fetch new items from all sources and score them."""
+def run(ctx: click.Context, hours: int | None, no_score: bool, no_match: bool) -> None:
+    """Fetch → score → match storylines."""
     pipeline = Pipeline(ctx.obj["config"], ctx.obj["db"], console=console)
 
     async def _go() -> None:
         await pipeline.fetch_all(force_hours=hours)
         if not no_score:
             await pipeline.score_pending()
+        if not no_match:
+            await pipeline.match_storylines()
 
     asyncio.run(_go())
 
@@ -73,6 +76,61 @@ def list_cmd(ctx: click.Context, limit: int, min_score: float | None) -> None:
             ", ".join(it.ai_tags[:3]),
         )
     console.print(table)
+
+
+@cli.command()
+@click.option("--limit", type=int, default=20, show_default=True)
+@click.pass_context
+def stories(ctx: click.Context, limit: int) -> None:
+    """List active storylines, freshest first."""
+    db = ctx.obj["db"]
+    rows = db.active_stories(limit=limit)
+    if not rows:
+        console.print("No storylines yet. Try `newsline run` first.")
+        return
+
+    table = Table(show_lines=False, expand=True)
+    table.add_column("ID", width=12)
+    table.add_column("Events", justify="right", width=6)
+    table.add_column("Top", justify="right", width=4)
+    table.add_column("Updated", width=10)
+    table.add_column("Title")
+
+    for r in rows:
+        lu = r["last_updated_at"]
+        updated = lu.strftime("%Y-%m-%d") if hasattr(lu, "strftime") else str(lu or "")[:10]
+        top = r.get("top_score")
+        table.add_row(
+            r["id"],
+            str(r.get("event_count") or 0),
+            f"{top:.1f}" if top is not None else "-",
+            updated,
+            r["title"],
+        )
+    console.print(table)
+
+
+@cli.command()
+@click.argument("story_id")
+@click.pass_context
+def story(ctx: click.Context, story_id: str) -> None:
+    """Show one storyline and all its events (id or unique prefix)."""
+    db = ctx.obj["db"]
+    full_id = db.resolve_story_id(story_id) or story_id
+    events = db.story_events(full_id)
+    if not events:
+        console.print(f"No events for story {story_id}.")
+        return
+
+    console.print(f"[bold]Story {full_id}[/bold] — {len(events)} event(s)")
+    for it in events:
+        ts = it.published_at.strftime("%Y-%m-%d %H:%M") if it.published_at else "  -  "
+        console.print(
+            f"  • {ts}  [dim]{it.source_type.value}[/dim]  "
+            f"[cyan]{it.ai_score or 0:.1f}[/cyan]  {it.title}"
+        )
+        if it.ai_summary:
+            console.print(f"      [dim]{it.ai_summary}[/dim]")
 
 
 @cli.command()

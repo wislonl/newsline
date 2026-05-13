@@ -37,7 +37,8 @@ class ContentItem(BaseModel):
     ai_summary: Optional[str] = None
     ai_tags: list[str] = Field(default_factory=list)
 
-    # Storyline link (filled in M1)
+    # Storyline (M1)
+    entities: list[str] = Field(default_factory=list)
     story_id: Optional[str] = None
 
 

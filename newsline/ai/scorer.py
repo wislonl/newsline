@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import re
 from dataclasses import dataclass
 
 from ..models import ContentItem
 from .client import LLMClient
+from .jsonio import extract_json
 
 SYSTEM_PROMPT = """You are a content curator scoring news items on a 0-10 importance scale.
 
@@ -69,7 +68,7 @@ class Scorer:
             except Exception:
                 return None
 
-        data = _extract_json(raw)
+        data = extract_json(raw)
         if not data:
             return None
         try:
@@ -81,19 +80,3 @@ class Scorer:
             )
         except (KeyError, ValueError, TypeError):
             return None
-
-
-def _extract_json(raw: str) -> dict | None:
-    """Models sometimes wrap JSON in prose or fences. Be lenient."""
-    raw = raw.strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        return None

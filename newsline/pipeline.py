@@ -23,6 +23,7 @@ from .db import Database
 from .scrapers.base import Scraper
 from .scrapers.hackernews import HackerNewsScraper
 from .scrapers.rss import RSSScraper
+from .storyline import StorylineMatcher
 
 
 class Pipeline:
@@ -93,3 +94,35 @@ class Pipeline:
             done += 1
         self.console.print(f"⭐️ Scored {done} / {len(pending)} items")
         return done
+
+    async def match_storylines(self) -> int:
+        """Attach high-scoring items to stories (creating new ones as needed)."""
+        threshold = self.config.filtering.ai_score_threshold
+        items = self.db.items_needing_storyline(min_score=threshold, limit=200)
+        if not items:
+            self.console.print("Nothing to match.")
+            return 0
+
+        self.console.print(
+            f"🧭 Matching {len(items)} items (score ≥ {threshold}) to storylines"
+        )
+        client = create_client(self.config.ai)
+        matcher = StorylineMatcher(self.db, client)
+
+        new_stories = 0
+        attached = 0
+        # Sequential so each item sees stories created by earlier ones in this batch.
+        for item in items:
+            try:
+                _sid, is_new = await matcher.process(item)
+            except Exception as e:
+                self.console.print(f"[red]match error on {item.id}: {e}[/red]")
+                continue
+            if is_new:
+                new_stories += 1
+            else:
+                attached += 1
+        self.console.print(
+            f"🧭 Created {new_stories} new stories, attached {attached} follow-ups"
+        )
+        return new_stories + attached

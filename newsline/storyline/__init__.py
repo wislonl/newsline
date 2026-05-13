@@ -1,8 +1,8 @@
-"""Storyline engine (M1 — not implemented yet).
+"""Storyline engine.
 
-Plan:
-  - Entity extraction (LLM) on each ContentItem
-  - Embedding index over story summaries (sqlite-vec)
-  - Story matching: embedding similarity + entity overlap + LLM verify
-  - Incremental summary update on attach
+M1: entity-overlap-first matching with LLM verification.
 """
+
+from .matcher import StorylineMatcher
+
+__all__ = ["StorylineMatcher"]
