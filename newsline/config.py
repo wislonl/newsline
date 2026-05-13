@@ -5,16 +5,18 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional  # noqa: F401  (used in AIConfig)
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 
 class AIConfig(BaseModel):
-    provider: str = "anthropic"        # anthropic | openai
+    provider: str = "anthropic"        # anthropic | openai | minimax
     model: str = "claude-haiku-4-5-20251001"
     api_key_env: str = "ANTHROPIC_API_KEY"
+    base_url: Optional[str] = None     # override for OpenAI-compatible providers
+    temperature: float = 0.3
 
     @property
     def api_key(self) -> str:
