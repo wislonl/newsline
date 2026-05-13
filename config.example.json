@@ -1,0 +1,22 @@
+{
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5-20251001",
+    "api_key_env": "ANTHROPIC_API_KEY"
+  },
+  "filtering": {
+    "time_window_hours": 24,
+    "ai_score_threshold": 6.0
+  },
+  "sources": {
+    "rss": [
+      { "name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/" },
+      { "name": "Anthropic News", "url": "https://www.anthropic.com/news/rss.xml" }
+    ],
+    "hackernews": {
+      "enabled": true,
+      "top_n": 30,
+      "min_points": 50
+    }
+  }
+}

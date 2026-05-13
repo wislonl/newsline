@@ -1,0 +1,10 @@
+newsline
+Copyright 2026 newsline contributors
+
+This product includes scraper implementations adapted from:
+
+  Horizon (https://github.com/Thysrael/Horizon)
+  Copyright (c) Thysrael, licensed under the MIT License.
+
+Modifications: ported to newsline's storyline-oriented data model and
+async pipeline. Original MIT license terms preserved for those portions.

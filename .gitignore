@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Secrets & local config
+.env
+config.json
+data/
+
+# Local SQLite & embeddings
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Build
+dist/
+build/
