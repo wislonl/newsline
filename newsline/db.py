@@ -298,6 +298,53 @@ class Database:
             return None
         return rows[0]["id"]
 
+    def stories_with_wrong_language_title(self, language: str) -> list[dict]:
+        """Stories whose title is not in the configured display language."""
+        lang = language.lower()
+        if lang not in ("en", "zh"):
+            return []
+        with self.conn() as c:
+            rows = c.execute(
+                "SELECT id, title FROM stories WHERE status='active' AND title IS NOT NULL AND title != ''"
+            ).fetchall()
+        out: list[dict] = []
+        for r in rows:
+            has_cjk = any("一" <= ch <= "鿿" for ch in r["title"])
+            wrong = (lang == "zh" and not has_cjk) or (lang == "en" and has_cjk)
+            if wrong:
+                out.append(dict(r))
+        return out
+
+    def update_story_title(self, story_id: str, title: str) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE stories SET title = ? WHERE id = ?", (title, story_id))
+
+    def items_with_wrong_language_summary(self, language: str) -> list[dict]:
+        """ContentItems whose ai_summary doesn't match the configured language."""
+        lang = language.lower()
+        if lang not in ("en", "zh"):
+            return []
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT id, title, ai_summary
+                  FROM content_items
+                 WHERE ai_summary IS NOT NULL AND ai_summary != ''
+                """
+            ).fetchall()
+        out: list[dict] = []
+        for r in rows:
+            has_cjk = any("一" <= ch <= "鿿" for ch in r["ai_summary"])
+            wrong = (lang == "zh" and not has_cjk) or (lang == "en" and has_cjk)
+            if wrong:
+                out.append(dict(r))
+        return out
+
+    def update_item_summary(self, item_id: str, summary: str) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE content_items SET ai_summary = ? WHERE id = ?",
+                      (summary, item_id))
+
     def stories_in_wrong_language(self, language: str) -> list[dict]:
         """Stories whose summary doesn't match the configured language.
 

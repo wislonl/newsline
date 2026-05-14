@@ -229,55 +229,78 @@ def signals(ctx: click.Context, days: int) -> None:
 
 
 @cli.command(name="retranslate")
-@click.option("--force", is_flag=True, help="Re-summarize ALL stories, not just wrong-language ones")
+@click.option("--summaries/--no-summaries", default=True, show_default=True)
+@click.option("--titles/--no-titles", default=True, show_default=True)
 @click.pass_context
-def retranslate(ctx: click.Context, force: bool) -> None:
-    """Re-rewrite story summaries to match the configured ai.language.
+def retranslate(ctx: click.Context, summaries: bool, titles: bool) -> None:
+    """Re-translate story summaries and/or titles to match ai.language.
 
-    Use this after switching language: existing stories were summarized
-    in the old language and won't change on their own (the regular
-    stale-summary check only fires on multi-event stories).
+    Use this after switching language; existing rows were generated in
+    the old language and won't change on their own.
     """
+    from datetime import datetime, timezone
+
     from .ai.client import create_client
     from .ai.rewriter import SummaryRewriter
-    from datetime import datetime, timezone
+    from .ai.translator import TitleTranslator
 
     cfg = ctx.obj["config"]
     db = ctx.obj["db"]
-
-    if force:
-        with db.conn() as c:
-            rows = c.execute(
-                "SELECT id, title, summary FROM stories WHERE status='active' AND summary IS NOT NULL"
-            ).fetchall()
-            targets = [dict(r) for r in rows]
-    else:
-        targets = db.stories_in_wrong_language(cfg.ai.language)
-
-    if not targets:
-        console.print(f"All summaries already match language={cfg.ai.language!r}.")
-        return
-
-    console.print(f"📝 Re-summarizing {len(targets)} stories in {cfg.ai.language!r}")
     client = create_client(cfg.ai)
-    rewriter = SummaryRewriter(client, language=cfg.ai.language)
 
-    async def _one(row: dict) -> bool:
-        events = db.story_events(row["id"])
-        if not events:
-            return False
-        new_summary = await rewriter.rewrite(row["title"], events)
-        if not new_summary:
-            return False
-        db.update_story_summary(row["id"], new_summary, datetime.now(timezone.utc))
-        return True
+    if summaries:
+        targets = db.stories_in_wrong_language(cfg.ai.language)
+        if targets:
+            console.print(f"📝 Summaries: rewriting {len(targets)} stories in {cfg.ai.language!r}")
+            rewriter = SummaryRewriter(client, language=cfg.ai.language)
 
-    async def _go() -> int:
-        results = await asyncio.gather(*(_one(t) for t in targets), return_exceptions=True)
-        return sum(1 for r in results if r is True)
+            async def _one_summary(row: dict) -> bool:
+                events = db.story_events(row["id"])
+                if not events:
+                    return False
+                new_summary = await rewriter.rewrite(row["title"], events)
+                if not new_summary:
+                    return False
+                db.update_story_summary(row["id"], new_summary, datetime.now(timezone.utc))
+                return True
 
-    done = asyncio.run(_go())
-    console.print(f"✓ Rewrote {done} / {len(targets)}")
+            async def _go() -> int:
+                results = await asyncio.gather(
+                    *(_one_summary(t) for t in targets), return_exceptions=True
+                )
+                return sum(1 for r in results if r is True)
+
+            done = asyncio.run(_go())
+            console.print(f"  ✓ {done}/{len(targets)} summaries")
+        else:
+            console.print(f"📝 Summaries: all in {cfg.ai.language!r} already")
+
+    if titles:
+        if cfg.ai.language.lower() != "zh":
+            console.print("🏷  Titles: skipping — only zh target supported right now")
+        else:
+            targets = db.stories_with_wrong_language_title(cfg.ai.language)
+            if not targets:
+                console.print(f"🏷  Titles: all in {cfg.ai.language!r} already")
+            else:
+                console.print(f"🏷  Titles: translating {len(targets)} story titles")
+                translator = TitleTranslator(client, language=cfg.ai.language)
+
+                async def _one_title(row: dict) -> bool:
+                    new_title = await translator.translate(row["title"])
+                    if not new_title or new_title == row["title"]:
+                        return False
+                    db.update_story_title(row["id"], new_title)
+                    return True
+
+                async def _go() -> int:
+                    results = await asyncio.gather(
+                        *(_one_title(t) for t in targets), return_exceptions=True
+                    )
+                    return sum(1 for r in results if r is True)
+
+                done = asyncio.run(_go())
+                console.print(f"  ✓ {done}/{len(targets)} titles")
 
 
 @cli.command()

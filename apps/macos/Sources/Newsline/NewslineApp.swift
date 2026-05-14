@@ -16,10 +16,10 @@ struct NewslineApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Fetch Now") { model.runPipeline() }
+                Button(L10n.fetchNow) { model.runPipeline() }
                     .keyboardShortcut("r", modifiers: .command)
                     .disabled(model.pipelineRunning)
-                Button("Reload View") { model.reload() }
+                Button(L10n.reloadView) { model.reload() }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
             }
         }

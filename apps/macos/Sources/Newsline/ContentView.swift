@@ -12,19 +12,6 @@ private let isoParserNoFraction: ISO8601DateFormatter = {
     return f
 }()
 
-private let displayFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateStyle = .medium
-    f.timeStyle = .short
-    return f
-}()
-
-private let sidebarDateFormatter: DateFormatter = {
-    let f = DateFormatter()
-    f.dateFormat = "MMM d"
-    return f
-}()
-
 /// Parse the timestamps written by the Python daemon (datetime.isoformat()).
 /// They look like `2026-05-14T00:19:33.123456+00:00` or without fraction.
 private func parseTimestamp(_ s: String?) -> Date? {
@@ -33,15 +20,12 @@ private func parseTimestamp(_ s: String?) -> Date? {
 }
 
 private func displayDate(_ s: String?) -> String {
-    parseTimestamp(s).map(displayFormatter.string(from:)) ?? (s ?? "")
+    parseTimestamp(s).map { $0.newslineDetailFormat } ?? (s ?? "")
 }
 
 private func sidebarDate(_ s: String?) -> String {
-    parseTimestamp(s).map(sidebarDateFormatter.string(from:)) ?? (s?.prefix(10).description ?? "")
-}
-
-private func pluralize(_ n: Int, _ singular: String) -> String {
-    "\(n) \(singular)\(n == 1 ? "" : "s")"
+    parseTimestamp(s).map { $0.newslineSidebarFormat }
+        ?? (s?.prefix(10).description ?? "")
 }
 
 struct ContentView: View {
@@ -53,7 +37,7 @@ struct ContentView: View {
         } detail: {
             storyDetail
         }
-        .navigationTitle("Newsline")
+        .navigationTitle(L10n.windowTitle)
         .toolbar {
             ToolbarItem(placement: .status) {
                 pipelineStatusView
@@ -63,10 +47,10 @@ struct ContentView: View {
                     if model.pipelineRunning {
                         ProgressView().controlSize(.small)
                     } else {
-                        Label("Fetch", systemImage: "arrow.clockwise")
+                        Label(L10n.fetchLabel, systemImage: "arrow.clockwise")
                     }
                 }
-                .help("Fetch new content (⌘R)")
+                .help(L10n.fetchTooltip)
                 .disabled(model.pipelineRunning)
             }
         }
@@ -94,16 +78,16 @@ struct ContentView: View {
     private var storyList: some View {
         if !model.dbExists {
             VStack(spacing: 8) {
-                Text("No newsline database yet.").font(.headline)
-                Text("Run `newsline run` in the terminal to populate it.")
+                Text(L10n.noDatabaseTitle).font(.headline)
+                Text(L10n.noDatabaseHint)
                     .font(.callout).foregroundStyle(.secondary)
             }
             .padding()
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if model.stories.isEmpty {
-            ContentUnavailableView("No active storylines",
+            ContentUnavailableView(L10n.noStoriesTitle,
                                    systemImage: "newspaper",
-                                   description: Text("Run the pipeline to create some."))
+                                   description: Text(L10n.noStoriesHint))
         } else {
             List(selection: Binding(
                 get: { model.selectedStoryID },
@@ -128,9 +112,9 @@ struct ContentView: View {
                     Text(story.title)
                         .font(.title2).bold()
                     HStack(spacing: 12) {
-                        Label(pluralize(story.eventCount, "event"), systemImage: "circle.dotted")
+                        Label(L10n.eventCount(story.eventCount), systemImage: "circle.dotted")
                         if let s = story.topScore {
-                            Label(String(format: "top %.1f", s), systemImage: "star")
+                            Label(L10n.topScore(s), systemImage: "star")
                         }
                         Text(displayDate(story.lastUpdated))
                             .foregroundStyle(.secondary)
@@ -144,7 +128,7 @@ struct ContentView: View {
                         if let first = model.events.first,
                            let url = URL(string: first.url) {
                             Link(destination: url) {
-                                Label("Open", systemImage: "arrow.up.right.square")
+                                Label(L10n.openLink, systemImage: "arrow.up.right.square")
                             }
                         }
                     }
@@ -158,7 +142,7 @@ struct ContentView: View {
                     // stories already showed everything above; no need to repeat.
                     if model.events.count > 1 {
                         Divider().padding(.vertical, 8)
-                        Text("Timeline").font(.headline)
+                        Text(L10n.timelineHeader).font(.headline)
                         ForEach(model.events) { e in
                             EventCard(event: e)
                         }
@@ -171,9 +155,9 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
-            ContentUnavailableView("Select a storyline",
+            ContentUnavailableView(L10n.selectStoryTitle,
                                    systemImage: "sidebar.left",
-                                   description: Text("Pick a story from the sidebar to view its timeline."))
+                                   description: Text(L10n.selectStoryHint))
         }
     }
 }
@@ -211,7 +195,7 @@ private struct ChatPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Ask about this story").font(.headline)
+                Text(L10n.chatHeader).font(.headline)
                 Spacer()
                 if model.chatPending {
                     ProgressView().controlSize(.small)
@@ -223,7 +207,7 @@ private struct ChatPanel: View {
             }
 
             HStack(spacing: 8) {
-                TextField("What changed? Why does this matter? …",
+                TextField(L10n.chatPlaceholder,
                           text: $draft, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
@@ -255,7 +239,7 @@ private struct ChatBubble: View {
                 if message.text.isEmpty {
                     HStack(spacing: 4) {
                         ProgressView().controlSize(.small)
-                        Text("Thinking…").foregroundStyle(.secondary)
+                        Text(L10n.chatThinking).foregroundStyle(.secondary)
                     }
                 } else {
                     Text(message.text).textSelection(.enabled)
@@ -291,7 +275,7 @@ private struct ThumbButton: View {
                 .foregroundStyle(isActive ? (kind == .thumbUp ? .green : .red) : .secondary)
         }
         .buttonStyle(.plain)
-        .help(kind == .thumbUp ? "Mark interesting" : "Mark not interesting")
+        .help(kind == .thumbUp ? L10n.thumbUpHelp : L10n.thumbDownHelp)
     }
 }
 
