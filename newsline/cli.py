@@ -138,6 +138,43 @@ def story(ctx: click.Context, story_id: str) -> None:
 
 
 @cli.command()
+@click.argument("story_id")
+@click.argument("question")
+@click.pass_context
+def chat(ctx: click.Context, story_id: str, question: str) -> None:
+    """Ask a question grounded in one storyline's events."""
+    from .ai.chatter import Chatter
+    from .ai.client import create_client
+
+    db = ctx.obj["db"]
+    cfg = ctx.obj["config"]
+
+    full_id = db.resolve_story_id(story_id) or story_id
+    events = db.story_events(full_id)
+    if not events:
+        console.print(f"No events for story {story_id!r}.")
+        raise SystemExit(1)
+
+    # Look up story metadata for title/summary
+    with db.conn() as c:
+        row = c.execute(
+            "SELECT title, summary FROM stories WHERE id = ?", (full_id,)
+        ).fetchone()
+    title = row["title"] if row else full_id
+    summary = row["summary"] if row else None
+
+    async def _go() -> None:
+        client = create_client(cfg.ai)
+        chatter = Chatter(client)
+        answer = await chatter.ask(
+            title=title, summary=summary, events=events, question=question
+        )
+        console.print(answer)
+
+    asyncio.run(_go())
+
+
+@cli.command()
 @click.option("--days", type=int, default=30, show_default=True)
 @click.pass_context
 def signals(ctx: click.Context, days: int) -> None:

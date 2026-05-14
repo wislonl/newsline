@@ -12,6 +12,11 @@ class LLMClient(ABC):
     async def complete_json(self, system: str, user: str) -> str:
         """Return raw JSON text from the model."""
 
+    @abstractmethod
+    async def complete_text(self, system: str, user: str, *,
+                            max_tokens: int = 1024) -> str:
+        """Return free-form text. Used by chat-over-story."""
+
 
 class AnthropicClient(LLMClient):
     def __init__(self, cfg: AIConfig):
@@ -20,9 +25,16 @@ class AnthropicClient(LLMClient):
         self._model = cfg.model
 
     async def complete_json(self, system: str, user: str) -> str:
+        return await self._call(system, user, max_tokens=1024)
+
+    async def complete_text(self, system: str, user: str, *,
+                            max_tokens: int = 1024) -> str:
+        return await self._call(system, user, max_tokens=max_tokens)
+
+    async def _call(self, system: str, user: str, *, max_tokens: int) -> str:
         resp = await self._anthropic.messages.create(
             model=self._model,
-            max_tokens=1024,
+            max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
@@ -48,6 +60,19 @@ class OpenAIClient(LLMClient):
         )
         return resp.choices[0].message.content or "{}"
 
+    async def complete_text(self, system: str, user: str, *,
+                            max_tokens: int = 1024) -> str:
+        resp = await self._openai.chat.completions.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            temperature=self._temperature,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        return resp.choices[0].message.content or ""
+
 
 class MiniMaxClient(LLMClient):
     """MiniMax via its OpenAI-compatible endpoint.
@@ -69,15 +94,23 @@ class MiniMaxClient(LLMClient):
         self._temperature = max(cfg.temperature, 0.01)
 
     async def complete_json(self, system: str, user: str) -> str:
+        return await self._call(system, user, max_tokens=1024) or "{}"
+
+    async def complete_text(self, system: str, user: str, *,
+                            max_tokens: int = 1024) -> str:
+        return await self._call(system, user, max_tokens=max_tokens)
+
+    async def _call(self, system: str, user: str, *, max_tokens: int) -> str:
         resp = await self._openai.chat.completions.create(
             model=self._model,
+            max_tokens=max_tokens,
             temperature=self._temperature,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         )
-        return resp.choices[0].message.content or "{}"
+        return resp.choices[0].message.content or ""
 
 
 def create_client(cfg: AIConfig) -> LLMClient:

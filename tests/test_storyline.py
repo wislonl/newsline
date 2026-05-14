@@ -27,6 +27,10 @@ class FakeLLM(LLMClient):
         self.calls.append((system, user))
         return self._responses.pop(0)
 
+    async def complete_text(self, system: str, user: str, *,
+                            max_tokens: int = 1024) -> str:
+        return await self.complete_json(system, user)
+
 
 @pytest.fixture
 def db(monkeypatch: pytest.MonkeyPatch) -> Database:
