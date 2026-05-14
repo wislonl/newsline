@@ -16,6 +16,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "anthropic>=0.40",
     "openai>=1.40",
+    "aiohttp>=3.9",
 ]
 
 [project.optional-dependencies]

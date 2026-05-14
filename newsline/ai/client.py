@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import AsyncIterator
 
 from ..config import AIConfig
 
@@ -16,6 +17,15 @@ class LLMClient(ABC):
     async def complete_text(self, system: str, user: str, *,
                             max_tokens: int = 1024) -> str:
         """Return free-form text. Used by chat-over-story."""
+
+    async def stream_text(self, system: str, user: str, *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        """Yield text chunks as they arrive. Default fallback: one shot.
+
+        Providers override to use their native streaming APIs.
+        """
+        full = await self.complete_text(system, user, max_tokens=max_tokens)
+        yield full
 
 
 class AnthropicClient(LLMClient):
@@ -39,6 +49,17 @@ class AnthropicClient(LLMClient):
             messages=[{"role": "user", "content": user}],
         )
         return resp.content[0].text
+
+    async def stream_text(self, system: str, user: str, *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        async with self._anthropic.messages.stream(
+            model=self._model,
+            max_tokens=max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+        ) as stream:
+            async for chunk in stream.text_stream:
+                yield chunk
 
 
 class OpenAIClient(LLMClient):
@@ -72,6 +93,25 @@ class OpenAIClient(LLMClient):
             ],
         )
         return resp.choices[0].message.content or ""
+
+    async def stream_text(self, system: str, user: str, *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        stream = await self._openai.chat.completions.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            temperature=self._temperature,
+            stream=True,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
 
 class MiniMaxClient(LLMClient):
@@ -111,6 +151,25 @@ class MiniMaxClient(LLMClient):
             ],
         )
         return resp.choices[0].message.content or ""
+
+    async def stream_text(self, system: str, user: str, *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        stream = await self._openai.chat.completions.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            temperature=self._temperature,
+            stream=True,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
 
 def create_client(cfg: AIConfig) -> LLMClient:

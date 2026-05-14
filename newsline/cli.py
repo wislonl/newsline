@@ -175,6 +175,31 @@ def chat(ctx: click.Context, story_id: str, question: str) -> None:
 
 
 @cli.command()
+@click.option("--days", type=int, default=1, show_default=True,
+              help="Window: stories updated in the last N days")
+@click.option("--top", type=int, default=20, show_default=True)
+@click.option("--min-score", type=float, default=None,
+              help="Defaults to filtering.ai_score_threshold from config")
+@click.option("-o", "--output", type=click.Path(path_type=Path), default=None,
+              help="Write to file instead of stdout (also prints path)")
+@click.pass_context
+def digest(ctx: click.Context, days: int, top: int, min_score: float | None,
+           output: Path | None) -> None:
+    """Render a markdown digest of recent storylines."""
+    from . import digest as digest_mod
+    cfg = ctx.obj["config"]
+    db = ctx.obj["db"]
+    threshold = min_score if min_score is not None else cfg.filtering.ai_score_threshold
+    text = digest_mod.render(db, days=days, top=top, min_score=threshold)
+    if output:
+        written = digest_mod.write(text, output)
+        console.print(f"Wrote {written}")
+    else:
+        # Use plain print so pipes / redirection don't get Rich's box-drawing.
+        click.echo(text)
+
+
+@cli.command()
 @click.option("--days", type=int, default=30, show_default=True)
 @click.pass_context
 def signals(ctx: click.Context, days: int) -> None:
@@ -201,6 +226,16 @@ def signals(ctx: click.Context, days: int) -> None:
             console.print(
                 f"  {str(r['ts'])[:19]}  {r['kind']:<12}{val}  {r['title'][:60]}"
             )
+
+
+@cli.command()
+@click.option("--port", type=int, default=8137, show_default=True,
+              help="Localhost port to bind")
+@click.pass_context
+def serve(ctx: click.Context, port: int) -> None:
+    """Run the chat sidecar HTTP server on 127.0.0.1."""
+    from . import server
+    asyncio.run(server.run(ctx.obj["config"], ctx.obj["db"], port=port))
 
 
 @cli.command()

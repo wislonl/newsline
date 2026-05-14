@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model?.flushDwell()
+        model?.sidecar.shutdown()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -52,9 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 struct ChatMessage: Identifiable, Hashable {
     enum Role { case user, assistant, error }
-    let id = UUID()
+    let id: UUID
     let role: Role
     let text: String
+
+    init(role: Role, text: String, idOverride: UUID? = nil) {
+        self.id = idOverride ?? UUID()
+        self.role = role
+        self.text = text
+    }
 }
 
 @MainActor
@@ -63,6 +70,7 @@ final class AppModel: ObservableObject {
     private(set) lazy var signals = Signals(dbURL: store.dbURL)
     private let chatService = ChatService()
     private let pipelineService = PipelineService()
+    let sidecar = Sidecar()
     private var watcher: DBWatcher?
     @Published var stories: [StoryRow] = []
     @Published var selectedStoryID: String?
@@ -186,24 +194,44 @@ final class AppModel: ObservableObject {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let storyID = selectedStoryID else { return }
         chats[storyID, default: []].append(ChatMessage(role: .user, text: trimmed))
+        // Append a draft assistant message we'll fill in as chunks arrive.
+        let draft = ChatMessage(role: .assistant, text: "")
+        chats[storyID, default: []].append(draft)
+        let draftID = draft.id
         chatPending = true
 
-        Task { [chatService] in
+        Task { [chatService, sidecar] in
             do {
-                let answer = try await chatService.ask(storyID: storyID, question: trimmed)
+                let base = try await sidecar.ensureRunning()
+                let stream = chatService.askStream(
+                    storyID: storyID, question: trimmed, baseURL: base)
+                var accumulated = ""
+                for try await chunk in stream {
+                    accumulated += chunk
+                    let snapshot = accumulated
+                    await MainActor.run {
+                        self.replaceDraft(storyID: storyID, id: draftID, text: snapshot)
+                    }
+                }
                 await MainActor.run {
-                    // Only append to the right story — user may have switched.
-                    self.chats[storyID, default: []].append(
-                        ChatMessage(role: .assistant, text: answer))
                     if self.selectedStoryID == storyID { self.chatPending = false }
                 }
             } catch {
                 await MainActor.run {
-                    self.chats[storyID, default: []].append(
-                        ChatMessage(role: .error, text: error.localizedDescription))
+                    self.replaceDraft(storyID: storyID, id: draftID,
+                                      text: error.localizedDescription, role: .error)
                     if self.selectedStoryID == storyID { self.chatPending = false }
                 }
             }
+        }
+    }
+
+    private func replaceDraft(storyID: String, id: UUID, text: String,
+                              role: ChatMessage.Role = .assistant) {
+        guard var msgs = chats[storyID] else { return }
+        if let idx = msgs.firstIndex(where: { $0.id == id }) {
+            msgs[idx] = ChatMessage(role: role, text: text, idOverride: id)
+            chats[storyID] = msgs
         }
     }
 }

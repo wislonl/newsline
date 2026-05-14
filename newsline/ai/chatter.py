@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import AsyncIterator
 
 from ..models import ContentItem
 from .client import LLMClient
@@ -62,6 +63,62 @@ class Chatter:
         user = build_user_prompt(title, summary, events, question)
         raw = await self.client.complete_text(self._system, user, max_tokens=1200)
         return _strip_reasoning(raw)
+
+    async def ask_stream(self, *, title: str, summary: str | None,
+                         events: list[ContentItem], question: str
+                         ) -> AsyncIterator[str]:
+        """Stream the answer chunk-by-chunk. Reasoning <think> blocks suppressed."""
+        if not events:
+            yield self._empty_reply
+            return
+        user = build_user_prompt(title, summary, events, question)
+        stripper = ReasoningStripper()
+        async for chunk in self.client.stream_text(self._system, user, max_tokens=1200):
+            emit = stripper.feed(chunk)
+            if emit:
+                yield emit
+        tail = stripper.flush()
+        if tail:
+            yield tail
+
+
+class ReasoningStripper:
+    """Suppress <think>...</think> blocks across a stream of chunks.
+
+    Reasoning models like MiniMax-M2.7 emit their internal monologue first.
+    We buffer chunks until we've either:
+      - seen </think> (then emit everything past it), or
+      - buffered enough characters with no <think> opening to be confident
+        the response isn't using reasoning tags (then emit the buffer).
+    """
+
+    _SNIFF = 32  # chars to wait before declaring "no reasoning tag here"
+
+    def __init__(self) -> None:
+        self._buf = ""
+        self._done = False
+
+    def feed(self, chunk: str) -> str:
+        if self._done:
+            return chunk
+        self._buf += chunk
+        if "<think>" not in self._buf and len(self._buf) >= self._SNIFF:
+            out, self._buf, self._done = self._buf, "", True
+            return out
+        idx = self._buf.find("</think>")
+        if idx >= 0:
+            out = self._buf[idx + len("</think>"):].lstrip()
+            self._buf, self._done = "", True
+            return out
+        return ""
+
+    def flush(self) -> str:
+        if self._done:
+            return ""
+        idx = self._buf.find("</think>")
+        out = self._buf[idx + len("</think>"):].lstrip() if idx >= 0 else self._buf
+        self._buf, self._done = "", True
+        return out
 
 
 def _strip_reasoning(raw: str) -> str:

@@ -251,11 +251,19 @@ private struct ChatBubble: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             if message.role == .user { Spacer(minLength: 60) }
-            Text(message.text)
-                .textSelection(.enabled)
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(background, in: RoundedRectangle(cornerRadius: 8))
-                .foregroundStyle(message.role == .error ? .red : .primary)
+            Group {
+                if message.text.isEmpty {
+                    HStack(spacing: 4) {
+                        ProgressView().controlSize(.small)
+                        Text("Thinking…").foregroundStyle(.secondary)
+                    }
+                } else {
+                    Text(message.text).textSelection(.enabled)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(background, in: RoundedRectangle(cornerRadius: 8))
+            .foregroundStyle(message.role == .error ? .red : .primary)
             if message.role != .user { Spacer(minLength: 60) }
         }
     }

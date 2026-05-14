@@ -46,6 +46,51 @@ struct ChatService {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
+    /// Stream chunks from the sidecar via NDJSON over chunked transfer.
+    /// Each line is one of:
+    ///   {"chunk": "..."}   text fragment to append
+    ///   {"done": true}     end of stream
+    ///   {"error": "..."}   throw
+    func askStream(storyID: String, question: String, baseURL: URL)
+        -> AsyncThrowingStream<String, Error>
+    {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    var req = URLRequest(url: baseURL.appendingPathComponent("chat"))
+                    req.httpMethod = "POST"
+                    req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    let body: [String: String] = ["story_id": storyID, "question": question]
+                    req.httpBody = try JSONSerialization.data(withJSONObject: body)
+                    let (bytes, response) = try await URLSession.shared.bytes(for: req)
+                    if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                        throw ChatError.processFailed(
+                            exitCode: Int32(http.statusCode), stderr: "HTTP \(http.statusCode)")
+                    }
+                    for try await line in bytes.lines {
+                        guard let data = line.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        else { continue }
+                        if let err = obj["error"] as? String {
+                            throw ChatError.processFailed(exitCode: -1, stderr: err)
+                        }
+                        if let chunk = obj["chunk"] as? String, !chunk.isEmpty {
+                            continuation.yield(chunk)
+                        }
+                        if obj["done"] as? Bool == true {
+                            break
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+
+    /// Legacy subprocess fallback. Used when the sidecar can't start.
     func ask(storyID: String, question: String) async throws -> String {
         guard let uv = Self.uvPath() else { throw ChatError.uvNotFound }
         let project = Self.projectDir()

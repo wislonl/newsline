@@ -7,9 +7,12 @@
 #   news story <id-prefix>  show one storyline's timeline
 #   news chat <id> "..."    ask a question grounded in a story
 #   news signals [--days N] inspect feedback signals
+#   news digest [--days N]  markdown digest of recent storylines
 #   news kick               trigger the daily LaunchAgent right now
 #   news log                tail the daemon log
 #   news where              print the data dir
+#   news build              build a Newsline.app bundle (no Xcode)
+#   news install            symlink the .app into ~/Applications
 
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
@@ -26,8 +29,14 @@ case "$cmd" in
     log)
         exec tail -f "$HOME/Library/Logs/newsline.log"
         ;;
+    build)
+        exec "$PROJECT_DIR/scripts/build-app.sh"
+        ;;
+    install)
+        exec "$PROJECT_DIR/scripts/install-app.sh"
+        ;;
     -h|--help|help)
-        sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         ;;
     *)
         cd "$PROJECT_DIR"
