@@ -106,6 +106,9 @@ class Database:
 
     def _init_schema(self) -> None:
         with self.conn() as c:
+            # WAL lets the Mac app write user_signals while the Python pipeline
+            # is mid-run. Reads are also non-blocking. Sticky setting — one-shot.
+            c.execute("PRAGMA journal_mode=WAL")
             c.executescript(SCHEMA)
             # idempotent column add for pre-v2 databases
             cols = {r["name"] for r in c.execute("PRAGMA table_info(content_items)").fetchall()}
@@ -328,6 +331,43 @@ class Database:
                 "UPDATE stories SET summary = ?, summary_updated_at = ? WHERE id = ?",
                 (summary, when, story_id),
             )
+
+    def signal_summary(self, days: int = 30) -> dict:
+        """Aggregate user_signals over a recent window for inspection."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        with self.conn() as c:
+            by_kind = {
+                r["kind"]: r["n"]
+                for r in c.execute(
+                    "SELECT kind, COUNT(*) AS n FROM user_signals WHERE ts >= ? "
+                    "GROUP BY kind ORDER BY n DESC",
+                    (cutoff,),
+                ).fetchall()
+            }
+            dwell = c.execute(
+                "SELECT AVG(value) AS avg, COUNT(*) AS n FROM user_signals "
+                "WHERE kind = 'dwell_ms' AND ts >= ?",
+                (cutoff,),
+            ).fetchone()
+            recent = [
+                dict(r) for r in c.execute(
+                    """
+                    SELECT us.ts, us.kind, us.value, ci.title
+                      FROM user_signals us
+                      JOIN content_items ci ON ci.id = us.item_id
+                     WHERE us.ts >= ?
+                     ORDER BY us.ts DESC
+                     LIMIT 20
+                    """,
+                    (cutoff,),
+                ).fetchall()
+            ]
+        return {
+            "by_kind": by_kind,
+            "avg_dwell_ms": dwell["avg"] if dwell else None,
+            "dwell_count": dwell["n"] if dwell else 0,
+            "recent": recent,
+        }
 
     def story_events(self, story_id: str) -> list[ContentItem]:
         with self.conn() as c:

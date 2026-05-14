@@ -110,6 +110,12 @@ struct ContentView: View {
                         Text(displayDate(story.lastUpdated))
                             .foregroundStyle(.secondary)
                         Spacer()
+                        ThumbButton(kind: .thumbUp,
+                                    current: model.currentThumb,
+                                    action: model.thumbUp)
+                        ThumbButton(kind: .thumbDown,
+                                    current: model.currentThumb,
+                                    action: model.thumbDown)
                         if let first = model.events.first,
                            let url = URL(string: first.url) {
                             Link(destination: url) {
@@ -166,6 +172,24 @@ private struct StoryRowItem: View {
             .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
+    }
+}
+
+private struct ThumbButton: View {
+    let kind: Signals.Kind
+    let current: Signals.Kind?
+    let action: () -> Void
+
+    var body: some View {
+        let isActive = (current == kind)
+        let icon = (kind == .thumbUp ? "hand.thumbsup" : "hand.thumbsdown")
+            + (isActive ? ".fill" : "")
+        return Button(action: action) {
+            Image(systemName: icon)
+                .foregroundStyle(isActive ? (kind == .thumbUp ? .green : .red) : .secondary)
+        }
+        .buttonStyle(.plain)
+        .help(kind == .thumbUp ? "Mark interesting" : "Mark not interesting")
     }
 }
 

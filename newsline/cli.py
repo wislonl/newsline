@@ -138,6 +138,35 @@ def story(ctx: click.Context, story_id: str) -> None:
 
 
 @cli.command()
+@click.option("--days", type=int, default=30, show_default=True)
+@click.pass_context
+def signals(ctx: click.Context, days: int) -> None:
+    """Summarize user feedback signals (open/dwell/thumbs)."""
+    summary = ctx.obj["db"].signal_summary(days=days)
+
+    if not summary["by_kind"]:
+        console.print(f"No signals in the last {days} days.")
+        return
+
+    console.print(f"[bold]Signals over the last {days} days[/bold]")
+    for kind, n in summary["by_kind"].items():
+        console.print(f"  {kind:<12} {n}")
+    if summary["avg_dwell_ms"]:
+        avg = summary["avg_dwell_ms"] / 1000.0
+        console.print(f"  avg dwell    {avg:.1f}s  (n={summary['dwell_count']})")
+
+    if summary["recent"]:
+        console.print("\n[bold]Recent[/bold]")
+        for r in summary["recent"]:
+            val = ""
+            if r["kind"] == "dwell_ms" and r["value"]:
+                val = f"  {r['value']/1000:.1f}s"
+            console.print(
+                f"  {str(r['ts'])[:19]}  {r['kind']:<12}{val}  {r['title'][:60]}"
+            )
+
+
+@cli.command()
 def where() -> None:
     """Print the local data directory."""
     d = default_data_dir()
