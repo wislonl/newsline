@@ -87,10 +87,22 @@ final class AppModel: ObservableObject {
     @Published private(set) var pipelineStatus: String = ""
     @Published private(set) var pipelineError: String?
 
+    /// Sidebar filter: show only stories whose top event scored ≥ this.
+    /// Persisted in UserDefaults so it survives relaunches.
+    @Published var minScore: Double {
+        didSet { UserDefaults.standard.set(minScore, forKey: "newsline.minScore") }
+    }
+
+    var filteredStories: [StoryRow] {
+        stories.filter { ($0.topScore ?? 0) >= minScore }
+    }
+
     // Dwell tracking — when did the user select the current story?
     private var selectedAt: Date?
 
     init() {
+        let stored = UserDefaults.standard.object(forKey: "newsline.minScore") as? Double
+        self.minScore = stored ?? 8.0
         reload()
         watcher = DBWatcher(dbPath: store.dbURL.path) { [weak self] in
             self?.reload()

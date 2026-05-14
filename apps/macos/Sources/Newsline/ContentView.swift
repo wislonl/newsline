@@ -89,16 +89,46 @@ struct ContentView: View {
                                    systemImage: "newspaper",
                                    description: Text(L10n.noStoriesHint))
         } else {
-            List(selection: Binding(
-                get: { model.selectedStoryID },
-                set: { model.select($0) }
-            )) {
-                ForEach(model.stories) { story in
-                    StoryRowItem(story: story).tag(story.id)
+            VStack(spacing: 0) {
+                scoreFilterBar
+                Divider()
+                let visible = model.filteredStories
+                if visible.isEmpty {
+                    ContentUnavailableView(
+                        L10n.isChinese ? "没有 ≥\(Int(model.minScore)) 分的故事" : "Nothing ≥ \(Int(model.minScore))",
+                        systemImage: "line.3.horizontal.decrease.circle",
+                        description: Text(L10n.isChinese ? "拖动滑块降低阈值。" : "Lower the threshold to see more.")
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    List(selection: Binding(
+                        get: { model.selectedStoryID },
+                        set: { model.select($0) }
+                    )) {
+                        ForEach(visible) { story in
+                            StoryRowItem(story: story).tag(story.id)
+                        }
+                    }
+                    .listStyle(.sidebar)
                 }
             }
-            .listStyle(.sidebar)
         }
+    }
+
+    @ViewBuilder
+    private var scoreFilterBar: some View {
+        let count = model.filteredStories.count
+        let total = model.stories.count
+        HStack(spacing: 8) {
+            Image(systemName: "star.fill").foregroundStyle(.yellow)
+            Text("≥ \(String(format: "%.0f", model.minScore))")
+                .font(.callout).bold().monospacedDigit()
+            Slider(value: $model.minScore, in: 0...10, step: 1)
+                .controlSize(.mini)
+            Text("\(count)/\(total)")
+                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
     }
 
     // MARK: - Detail: events of selected story
