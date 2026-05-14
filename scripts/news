@@ -17,11 +17,21 @@
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
 
+APP_BUNDLE="$PROJECT_DIR/apps/macos/build/Newsline.app"
+APP_LINK="$HOME/Applications/Newsline.app"
+
 cmd="${1:-app}"
 case "$cmd" in
     app|open|"")
-        cd "$PROJECT_DIR/apps/macos"
-        exec swift run -q Newsline
+        # First-run: build the .app and symlink it into ~/Applications.
+        if [[ ! -d "$APP_BUNDLE" ]]; then
+            echo "→ First run: building Newsline.app…"
+            "$PROJECT_DIR/scripts/build-app.sh"
+        fi
+        if [[ ! -L "$APP_LINK" && ! -d "$APP_LINK" ]]; then
+            "$PROJECT_DIR/scripts/install-app.sh"
+        fi
+        exec open -a Newsline
         ;;
     kick)
         exec launchctl kickstart -k "gui/$(id -u)/com.newsline.daily"
