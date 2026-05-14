@@ -22,6 +22,7 @@ from .config import Config
 from .db import Database
 from .scrapers.base import Scraper
 from .scrapers.hackernews import HackerNewsScraper
+from .scrapers.reddit import RedditScraper
 from .scrapers.rss import RSSScraper
 from .storyline import StorylineMatcher
 
@@ -43,6 +44,8 @@ class Pipeline:
                 scrapers.append(RSSScraper(self.config.sources.rss, client))
             if self.config.sources.hackernews.enabled:
                 scrapers.append(HackerNewsScraper(self.config.sources.hackernews, client))
+            if self.config.sources.reddit.enabled:
+                scrapers.append(RedditScraper(self.config.sources.reddit, client))
 
             results = await asyncio.gather(
                 *(self._fetch_one(s, since) for s in scrapers),

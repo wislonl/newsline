@@ -44,9 +44,23 @@ class HackerNewsConfig(BaseModel):
     min_points: int = 50
 
 
+class RedditSubreddit(BaseModel):
+    subreddit: str
+    sort: str = "hot"             # hot | top | new
+    time_filter: str = "day"      # only when sort=top|controversial
+    fetch_limit: int = 25
+    min_score: int = 50
+
+
+class RedditConfig(BaseModel):
+    enabled: bool = False
+    subreddits: list[RedditSubreddit] = Field(default_factory=list)
+
+
 class SourcesConfig(BaseModel):
     rss: list[RSSFeed] = Field(default_factory=list)
     hackernews: HackerNewsConfig = Field(default_factory=HackerNewsConfig)
+    reddit: RedditConfig = Field(default_factory=RedditConfig)
 
 
 class Config(BaseModel):

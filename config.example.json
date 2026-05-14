@@ -17,6 +17,13 @@
       "enabled": true,
       "top_n": 30,
       "min_points": 50
+    },
+    "reddit": {
+      "enabled": false,
+      "subreddits": [
+        { "subreddit": "MachineLearning", "sort": "hot", "fetch_limit": 25, "min_score": 50 },
+        { "subreddit": "LocalLLaMA",      "sort": "hot", "fetch_limit": 25, "min_score": 50 }
+      ]
     }
   }
 }
