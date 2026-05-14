@@ -39,12 +39,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class AppModel: ObservableObject {
     private let store = Store()
+    private var watcher: DBWatcher?
     @Published var stories: [StoryRow] = []
     @Published var selectedStoryID: String?
     @Published var events: [EventRow] = []
     @Published var dbExists: Bool = true
 
-    init() { reload() }
+    init() {
+        reload()
+        watcher = DBWatcher(path: store.dbURL.path) { [weak self] in
+            self?.reload()
+        }
+        watcher?.start()
+    }
+
+    deinit {
+        watcher?.stop()
+    }
 
     func reload() {
         dbExists = store.storyExists()

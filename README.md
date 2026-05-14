@@ -10,7 +10,7 @@ newsline is built on the same idea as [Horizon](https://github.com/Thysrael/Hori
 
 ## Status
 
-🚧 **M0** — bootstrapping. The Python pipeline scaffold is in place; storyline engine, ranker, and Mac app come next.
+🚧 **M2 (in progress)** — Python pipeline + storyline engine + SwiftUI reader work end-to-end. Daily cron, personal ranker, and chat-over-corpus still to come.
 
 ## Roadmap
 
@@ -29,8 +29,17 @@ cd newsline
 uv sync                        # or: pip install -e .
 cp .env.example .env           # add your LLM API key
 cp config.example.json config.json
-uv run newsline run            # fetch → score → store
-uv run newsline list           # browse scored items
+
+# Run the pipeline once
+uv run newsline run            # fetch → score → match storylines
+uv run newsline stories        # list active storylines
+uv run newsline story <id>     # inspect a story's timeline
+
+# Open the Mac app (auto-refreshes when the DB updates)
+cd apps/macos && swift run Newsline
+
+# Optional: install daily LaunchAgent (runs at 07:00 local)
+./scripts/install-daemon.sh
 ```
 
 ## Acknowledgements
