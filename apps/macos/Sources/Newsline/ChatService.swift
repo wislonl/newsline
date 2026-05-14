@@ -51,8 +51,9 @@ struct ChatService {
     ///   {"chunk": "..."}   text fragment to append
     ///   {"done": true}     end of stream
     ///   {"error": "..."}   throw
-    func askStream(storyID: String, question: String, baseURL: URL)
-        -> AsyncThrowingStream<String, Error>
+    func askStream(storyID: String, question: String,
+                   history: [[String: String]] = [],
+                   baseURL: URL) -> AsyncThrowingStream<String, Error>
     {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -60,7 +61,11 @@ struct ChatService {
                     var req = URLRequest(url: baseURL.appendingPathComponent("chat"))
                     req.httpMethod = "POST"
                     req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    let body: [String: String] = ["story_id": storyID, "question": question]
+                    let body: [String: Any] = [
+                        "story_id": storyID,
+                        "question": question,
+                        "history": history,
+                    ]
                     req.httpBody = try JSONSerialization.data(withJSONObject: body)
                     let (bytes, response) = try await URLSession.shared.bytes(for: req)
                     if let http = response as? HTTPURLResponse, http.statusCode != 200 {

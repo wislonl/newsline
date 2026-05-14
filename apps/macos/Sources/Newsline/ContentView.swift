@@ -30,6 +30,7 @@ private func sidebarDate(_ s: String?) -> String {
 
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
+    @FocusState private var searchFocused: Bool
 
     var body: some View {
         NavigationSplitView {
@@ -38,6 +39,7 @@ struct ContentView: View {
             storyDetail
         }
         .navigationTitle(L10n.windowTitle)
+        .background(keyboardCommands)  // invisible buttons for j/k/space/Enter/Cmd+F
         .toolbar {
             ToolbarItem(placement: .status) {
                 pipelineStatusView
@@ -54,6 +56,31 @@ struct ContentView: View {
                 .disabled(model.pipelineRunning)
             }
         }
+    }
+
+    // MARK: - Hidden keyboard shortcuts
+    // Single-key shortcuts (no modifier) only fire when no TextField has
+    // focus — exactly the behavior we want for j/k/space/Enter.
+
+    @ViewBuilder
+    private var keyboardCommands: some View {
+        HStack(spacing: 0) {
+            Button("") { model.selectNext() }
+                .keyboardShortcut(KeyEquivalent("j"), modifiers: [])
+            Button("") { model.selectPrevious() }
+                .keyboardShortcut(KeyEquivalent("k"), modifiers: [])
+            Button("") {
+                // Space: move to the next story (open implies read; advance).
+                model.selectNext()
+            }
+            .keyboardShortcut(.space, modifiers: [])
+            Button("") { model.openLeadInBrowser() }
+                .keyboardShortcut(.return, modifiers: [])
+            Button("") { searchFocused = true }
+                .keyboardShortcut("f", modifiers: .command)
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
     }
 
     // MARK: - Toolbar status
@@ -90,6 +117,11 @@ struct ContentView: View {
                                    description: Text(L10n.noStoriesHint))
         } else {
             VStack(spacing: 0) {
+                searchBar
+                if let tag = model.activeTag {
+                    activeTagBar(tag: tag)
+                }
+                Divider()
                 scoreFilterBar
                 Divider()
                 let sections = model.groupedStories
@@ -117,6 +149,41 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var searchBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(L10n.searchPlaceholder, text: $model.searchQuery)
+                .textFieldStyle(.plain)
+                .focused($searchFocused)
+            if !model.searchQuery.isEmpty {
+                Button(action: { model.searchQuery = "" }) {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private func activeTagBar(tag: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "tag.fill").foregroundStyle(.tint)
+            Text(L10n.filteringByTag(tag))
+                .font(.caption).bold()
+            Spacer()
+            Button(action: { model.activeTag = nil }) {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help(L10n.clearTagFilter)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.tint.opacity(0.08))
     }
 
     @ViewBuilder
@@ -182,6 +249,12 @@ struct ContentView: View {
 
                     if let summary = story.summary, !summary.isEmpty {
                         Text(summary).font(.body)
+                    }
+
+                    if !story.leadTags.isEmpty {
+                        FlowChips(tags: story.leadTags) { tag in
+                            model.activeTag = tag
+                        }
                     }
 
                     if let reason = story.leadReason, !reason.isEmpty {
@@ -360,6 +433,31 @@ private struct ChatBubble: View {
         case .user:      return AnyShapeStyle(.tint.opacity(0.18))
         case .assistant: return AnyShapeStyle(.background.secondary)
         case .error:     return AnyShapeStyle(Color.red.opacity(0.12))
+        }
+    }
+}
+
+/// A simple wrapping row of tag pills. SwiftUI doesn't ship a flow layout
+/// for macOS 14, so we use a HStack inside a ScrollView for horizontal
+/// overflow — good enough at 3-5 tags per story.
+private struct FlowChips: View {
+    let tags: [String]
+    let onTap: (String) -> Void
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(tags, id: \.self) { tag in
+                    Button(action: { onTap(tag) }) {
+                        Text(tag)
+                            .font(.caption)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(.tint.opacity(0.15), in: Capsule())
+                            .foregroundStyle(.tint)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Filter by \(tag)")
+                }
+            }
         }
     }
 }

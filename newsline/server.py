@@ -55,6 +55,15 @@ async def _chat(req: web.Request) -> web.StreamResponse:
     if not story_id or not question:
         return web.json_response({"error": "story_id and question required"}, status=400)
 
+    raw_history = payload.get("history") or []
+    history: list[dict[str, str]] = []
+    if isinstance(raw_history, list):
+        for turn in raw_history:
+            if (isinstance(turn, dict)
+                    and turn.get("role") in ("user", "assistant")
+                    and isinstance(turn.get("content"), str)):
+                history.append({"role": turn["role"], "content": turn["content"]})
+
     db: Database = req.app["db"]
     full_id = db.resolve_story_id(story_id) or story_id
     events = db.story_events(full_id)
@@ -83,7 +92,8 @@ async def _chat(req: web.Request) -> web.StreamResponse:
 
     try:
         async for chunk in chatter.ask_stream(
-            title=title, summary=summary, events=events, question=question
+            title=title, summary=summary, events=events,
+            question=question, history=history,
         ):
             await resp.write(json.dumps({"chunk": chunk}).encode("utf-8") + b"\n")
         await resp.write(json.dumps({"done": True}).encode("utf-8") + b"\n")

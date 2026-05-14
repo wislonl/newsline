@@ -52,6 +52,12 @@ enum L10n {
     static var showRead: String { isChinese ? "显示已读" : "Show Read" }
     static var dismissHelp: String { isChinese ? "屏蔽这条故事" : "Dismiss this story" }
     static var aiReasonLabel: String { isChinese ? "评分理由" : "Why this score" }
+    static var searchPlaceholder: String { isChinese ? "搜索故事…" : "Search stories…" }
+    static var tagsLabel: String { isChinese ? "标签" : "Tags" }
+    static func filteringByTag(_ tag: String) -> String {
+        isChinese ? "标签：\(tag)" : "Tag: \(tag)"
+    }
+    static var clearTagFilter: String { isChinese ? "清除标签筛选" : "Clear tag filter" }
 
     // Chat
     static var chatHeader: String { isChinese ? "针对这个故事提问" : "Ask about this story" }

@@ -27,6 +27,24 @@ class LLMClient(ABC):
         full = await self.complete_text(system, user, max_tokens=max_tokens)
         yield full
 
+    async def stream_chat(self, system: str,
+                          messages: list[dict[str, str]], *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        """Multi-turn streaming.
+
+        ``messages`` is an OpenAI-style list of {"role": "user"|"assistant",
+        "content": str}. The system prompt is delivered separately.
+
+        Default fallback: collapse to a single user turn and call stream_text.
+        Providers override for proper multi-turn handling.
+        """
+        if not messages:
+            return
+        # Crude fallback: join into one user message preserving role labels.
+        rendered = "\n\n".join(f"[{m['role']}] {m['content']}" for m in messages)
+        async for chunk in self.stream_text(system, rendered, max_tokens=max_tokens):
+            yield chunk
+
 
 class AnthropicClient(LLMClient):
     def __init__(self, cfg: AIConfig):
@@ -52,11 +70,19 @@ class AnthropicClient(LLMClient):
 
     async def stream_text(self, system: str, user: str, *,
                           max_tokens: int = 1024) -> AsyncIterator[str]:
+        async for chunk in self.stream_chat(
+            system, [{"role": "user", "content": user}], max_tokens=max_tokens
+        ):
+            yield chunk
+
+    async def stream_chat(self, system: str,
+                          messages: list[dict[str, str]], *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
         async with self._anthropic.messages.stream(
             model=self._model,
             max_tokens=max_tokens,
             system=system,
-            messages=[{"role": "user", "content": user}],
+            messages=messages,
         ) as stream:
             async for chunk in stream.text_stream:
                 yield chunk
@@ -96,15 +122,21 @@ class OpenAIClient(LLMClient):
 
     async def stream_text(self, system: str, user: str, *,
                           max_tokens: int = 1024) -> AsyncIterator[str]:
+        async for chunk in self.stream_chat(
+            system, [{"role": "user", "content": user}], max_tokens=max_tokens
+        ):
+            yield chunk
+
+    async def stream_chat(self, system: str,
+                          messages: list[dict[str, str]], *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        full_msgs = [{"role": "system", "content": system}] + messages
         stream = await self._openai.chat.completions.create(
             model=self._model,
             max_tokens=max_tokens,
             temperature=self._temperature,
             stream=True,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            messages=full_msgs,
         )
         async for chunk in stream:
             if not chunk.choices:
@@ -154,15 +186,21 @@ class MiniMaxClient(LLMClient):
 
     async def stream_text(self, system: str, user: str, *,
                           max_tokens: int = 1024) -> AsyncIterator[str]:
+        async for chunk in self.stream_chat(
+            system, [{"role": "user", "content": user}], max_tokens=max_tokens
+        ):
+            yield chunk
+
+    async def stream_chat(self, system: str,
+                          messages: list[dict[str, str]], *,
+                          max_tokens: int = 1024) -> AsyncIterator[str]:
+        full_msgs = [{"role": "system", "content": system}] + messages
         stream = await self._openai.chat.completions.create(
             model=self._model,
             max_tokens=max_tokens,
             temperature=self._temperature,
             stream=True,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            messages=full_msgs,
         )
         async for chunk in stream:
             if not chunk.choices:

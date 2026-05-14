@@ -65,15 +65,39 @@ class Chatter:
         return _strip_reasoning(raw)
 
     async def ask_stream(self, *, title: str, summary: str | None,
-                         events: list[ContentItem], question: str
+                         events: list[ContentItem], question: str,
+                         history: list[dict[str, str]] | None = None
                          ) -> AsyncIterator[str]:
-        """Stream the answer chunk-by-chunk. Reasoning <think> blocks suppressed."""
+        """Stream the answer chunk-by-chunk. Reasoning <think> blocks suppressed.
+
+        ``history`` is a list of prior {"role": "user"|"assistant", "content": str}
+        turns that came before this question, in chronological order. The story
+        context goes in the first user message, prior turns follow, then the new
+        question. This lets the model answer follow-ups ('what about its impact?')
+        coherently.
+        """
         if not events:
             yield self._empty_reply
             return
-        user = build_user_prompt(title, summary, events, question)
+
+        story_context = build_user_prompt(title, summary, events, question="")
+        # First user turn carries the story. Then prior conversation. Then
+        # current question. The model sees: story → past Q/A → new Q.
+        messages: list[dict[str, str]] = [{"role": "user", "content": story_context.rstrip()}]
+        if history:
+            messages.append({"role": "assistant",
+                             "content": "Got it. Ask your questions about this story."})
+            for turn in history:
+                role = turn.get("role")
+                content = turn.get("content")
+                if role in ("user", "assistant") and isinstance(content, str):
+                    messages.append({"role": role, "content": content})
+        messages.append({"role": "user", "content": question.strip()})
+
         stripper = ReasoningStripper()
-        async for chunk in self.client.stream_text(self._system, user, max_tokens=1200):
+        async for chunk in self.client.stream_chat(
+            self._system, messages, max_tokens=1200
+        ):
             emit = stripper.feed(chunk)
             if emit:
                 yield emit

@@ -95,12 +95,23 @@ final class AppModel: ObservableObject {
     @Published var showRead: Bool {
         didSet { UserDefaults.standard.set(showRead, forKey: "newsline.showRead") }
     }
+    @Published var searchQuery: String = ""
+    @Published var activeTag: String? = nil
 
     var filteredStories: [StoryRow] {
-        stories.filter { s in
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let tag = activeTag
+        return stories.filter { s in
             guard (s.topScore ?? 0) >= minScore else { return false }
             if s.isDismissed { return false }
             if !showRead && s.isRead { return false }
+            if let tag, !s.leadTags.contains(where: { $0.caseInsensitiveCompare(tag) == .orderedSame }) {
+                return false
+            }
+            if !q.isEmpty {
+                let hay = (s.title + " " + (s.summary ?? "")).lowercased()
+                if !hay.contains(q) { return false }
+            }
             return true
         }
     }
@@ -211,6 +222,41 @@ final class AppModel: ObservableObject {
         currentThumb = .thumbDown
     }
 
+    // MARK: - keyboard navigation
+
+    /// Flattened ordering of currently visible stories across sections.
+    private var visibleOrder: [String] {
+        groupedStories.flatMap { $0.stories.map(\.id) }
+    }
+
+    func selectNext() {
+        let order = visibleOrder
+        guard !order.isEmpty else { return }
+        if let current = selectedStoryID, let idx = order.firstIndex(of: current) {
+            let next = order[min(idx + 1, order.count - 1)]
+            select(next)
+        } else {
+            select(order.first)
+        }
+    }
+
+    func selectPrevious() {
+        let order = visibleOrder
+        guard !order.isEmpty else { return }
+        if let current = selectedStoryID, let idx = order.firstIndex(of: current) {
+            let prev = order[max(idx - 1, 0)]
+            select(prev)
+        } else {
+            select(order.last)
+        }
+    }
+
+    /// Open the lead event URL in the default browser.
+    func openLeadInBrowser() {
+        guard let first = events.first, let url = URL(string: first.url) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     /// Mark the current story dismissed: record signal + remove from sidebar.
     /// Selecting another story shows fresh content immediately.
     func dismissCurrent() {
@@ -273,6 +319,15 @@ final class AppModel: ObservableObject {
     func ask(_ question: String) {
         let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let storyID = selectedStoryID else { return }
+        // Build history from finalized prior turns BEFORE appending this question.
+        let history: [[String: String]] = (chats[storyID] ?? []).compactMap { msg in
+            guard !msg.text.isEmpty else { return nil }
+            switch msg.role {
+            case .user:      return ["role": "user",      "content": msg.text]
+            case .assistant: return ["role": "assistant", "content": msg.text]
+            case .error:     return nil  // errors aren't part of the conversation
+            }
+        }
         chats[storyID, default: []].append(ChatMessage(role: .user, text: trimmed))
         // Append a draft assistant message we'll fill in as chunks arrive.
         let draft = ChatMessage(role: .assistant, text: "")
@@ -284,7 +339,8 @@ final class AppModel: ObservableObject {
             do {
                 let base = try await sidecar.ensureRunning()
                 let stream = chatService.askStream(
-                    storyID: storyID, question: trimmed, baseURL: base)
+                    storyID: storyID, question: trimmed,
+                    history: history, baseURL: base)
                 var accumulated = ""
                 for try await chunk in stream {
                     accumulated += chunk

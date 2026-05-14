@@ -24,7 +24,8 @@ final class Store {
         let sql = """
             WITH lead AS (
                 SELECT story_id, id AS lead_id, source_type AS lead_source,
-                       ai_reason AS lead_reason, ai_score AS lead_score
+                       ai_reason AS lead_reason, ai_tags AS lead_tags,
+                       ai_score AS lead_score
                   FROM content_items ci
                  WHERE ci.story_id IS NOT NULL
                    AND ci.ai_score = (
@@ -40,7 +41,7 @@ final class Store {
             )
             SELECT s.id, s.title, s.summary, s.last_updated_at,
                    a.event_count, a.top_score,
-                   l.lead_id, l.lead_source, l.lead_reason,
+                   l.lead_id, l.lead_source, l.lead_reason, l.lead_tags,
                    EXISTS (SELECT 1 FROM user_signals us
                             WHERE us.item_id = l.lead_id AND us.kind = 'open') AS is_read,
                    EXISTS (SELECT 1 FROM user_signals us
@@ -69,8 +70,9 @@ final class Store {
                 leadItemID: text(stmt, 6) ?? "",
                 leadSource: text(stmt, 7) ?? "",
                 leadReason: text(stmt, 8),
-                isRead: sqlite3_column_int(stmt, 9) != 0,
-                isDismissed: sqlite3_column_int(stmt, 10) != 0
+                leadTags: Self.parseTagsJSON(text(stmt, 9)),
+                isRead: sqlite3_column_int(stmt, 10) != 0,
+                isDismissed: sqlite3_column_int(stmt, 11) != 0
             ))
         }
         return out
@@ -131,6 +133,13 @@ final class Store {
         guard let cstr = sqlite3_column_text(stmt, col) else { return nil }
         return String(cString: cstr)
     }
+
+    static func parseTagsJSON(_ raw: String?) -> [String] {
+        guard let raw, let data = raw.data(using: .utf8),
+              let arr = try? JSONSerialization.jsonObject(with: data) as? [Any]
+        else { return [] }
+        return arr.compactMap { $0 as? String }
+    }
 }
 
 struct StoryRow: Identifiable, Hashable {
@@ -145,6 +154,7 @@ struct StoryRow: Identifiable, Hashable {
     let leadItemID: String
     let leadSource: String       // e.g. "rss", "hackernews", "reddit"
     let leadReason: String?      // ai_reason of the lead event
+    let leadTags: [String]       // ai_tags of the lead event (parsed from JSON)
     let isRead: Bool
     let isDismissed: Bool
 }
