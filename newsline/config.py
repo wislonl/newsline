@@ -32,13 +32,15 @@ class AIConfig(BaseModel):
 class FilteringConfig(BaseModel):
     time_window_hours: int = 24
     ai_score_threshold: float = 6.0
-    # Per-source score bias (added after the LLM scores). Use negative
-    # values for already-curated sources where the model overscores
-    # (e.g. HN topstories), positive for sources where high-quality
-    # items are scattered in noise.
+    # Per-source score bias (added after the LLM scores). Default is 0
+    # for every source — looking at real data, MiniMax-M2.7-highspeed is
+    # already conservative (a Microsoft BitLocker zero-day was scored 7,
+    # not 8). Applying a negative bias on HN here pushes legitimate
+    # high-impact news below typical ≥8 filters. Turn this back on if
+    # you find a source actually overscoring relative to others.
     source_bias: dict[str, float] = Field(default_factory=lambda: {
-        "hackernews": -1.0,   # already top-curated; everything looks "good"
-        "reddit": -0.5,       # also pre-filtered (min_score in config)
+        "hackernews": 0.0,
+        "reddit": 0.0,
         "rss": 0.0,
         "github": 0.0,
         "twitter": 0.0,
