@@ -298,6 +298,33 @@ class Database:
             return None
         return rows[0]["id"]
 
+    def stories_in_wrong_language(self, language: str) -> list[dict]:
+        """Stories whose summary doesn't match the configured language.
+
+        Heuristic: if language is 'zh' and the summary contains no CJK
+        characters (Unicode U+4E00–U+9FFF), it's not Chinese. Vice versa
+        for 'en'. Unknown languages return [] (no-op).
+        """
+        lang = language.lower()
+        if lang not in ("en", "zh"):
+            return []
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT s.id, s.title, s.summary
+                  FROM stories s
+                 WHERE s.status = 'active' AND s.summary IS NOT NULL AND s.summary != ''
+              ORDER BY s.last_updated_at DESC
+                """
+            ).fetchall()
+        out: list[dict] = []
+        for r in rows:
+            has_cjk = any("一" <= ch <= "鿿" for ch in r["summary"])
+            wrong = (lang == "zh" and not has_cjk) or (lang == "en" and has_cjk)
+            if wrong:
+                out.append(dict(r))
+        return out
+
     def stories_with_stale_summary(self, min_events: int = 2) -> list[dict]:
         """Stories where new events have been attached since the last summary.
 

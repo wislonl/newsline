@@ -228,6 +228,58 @@ def signals(ctx: click.Context, days: int) -> None:
             )
 
 
+@cli.command(name="retranslate")
+@click.option("--force", is_flag=True, help="Re-summarize ALL stories, not just wrong-language ones")
+@click.pass_context
+def retranslate(ctx: click.Context, force: bool) -> None:
+    """Re-rewrite story summaries to match the configured ai.language.
+
+    Use this after switching language: existing stories were summarized
+    in the old language and won't change on their own (the regular
+    stale-summary check only fires on multi-event stories).
+    """
+    from .ai.client import create_client
+    from .ai.rewriter import SummaryRewriter
+    from datetime import datetime, timezone
+
+    cfg = ctx.obj["config"]
+    db = ctx.obj["db"]
+
+    if force:
+        with db.conn() as c:
+            rows = c.execute(
+                "SELECT id, title, summary FROM stories WHERE status='active' AND summary IS NOT NULL"
+            ).fetchall()
+            targets = [dict(r) for r in rows]
+    else:
+        targets = db.stories_in_wrong_language(cfg.ai.language)
+
+    if not targets:
+        console.print(f"All summaries already match language={cfg.ai.language!r}.")
+        return
+
+    console.print(f"📝 Re-summarizing {len(targets)} stories in {cfg.ai.language!r}")
+    client = create_client(cfg.ai)
+    rewriter = SummaryRewriter(client, language=cfg.ai.language)
+
+    async def _one(row: dict) -> bool:
+        events = db.story_events(row["id"])
+        if not events:
+            return False
+        new_summary = await rewriter.rewrite(row["title"], events)
+        if not new_summary:
+            return False
+        db.update_story_summary(row["id"], new_summary, datetime.now(timezone.utc))
+        return True
+
+    async def _go() -> int:
+        results = await asyncio.gather(*(_one(t) for t in targets), return_exceptions=True)
+        return sum(1 for r in results if r is True)
+
+    done = asyncio.run(_go())
+    console.print(f"✓ Rewrote {done} / {len(targets)}")
+
+
 @cli.command()
 @click.option("--port", type=int, default=8137, show_default=True,
               help="Localhost port to bind")
