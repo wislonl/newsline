@@ -16,8 +16,11 @@ struct NewslineApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(after: .newItem) {
-                Button("Refresh") { model.reload() }
+                Button("Fetch Now") { model.runPipeline() }
                     .keyboardShortcut("r", modifiers: .command)
+                    .disabled(model.pipelineRunning)
+                Button("Reload View") { model.reload() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
             }
         }
     }
@@ -59,6 +62,7 @@ final class AppModel: ObservableObject {
     private let store = Store()
     private(set) lazy var signals = Signals(dbURL: store.dbURL)
     private let chatService = ChatService()
+    private let pipelineService = PipelineService()
     private var watcher: DBWatcher?
     @Published var stories: [StoryRow] = []
     @Published var selectedStoryID: String?
@@ -69,6 +73,11 @@ final class AppModel: ObservableObject {
     /// In-memory chat history per story. Lost on quit (intentional for M4-1).
     @Published private(set) var chats: [String: [ChatMessage]] = [:]
     @Published private(set) var chatPending: Bool = false
+
+    /// Manual pipeline refresh state (triggered by the toolbar button).
+    @Published private(set) var pipelineRunning: Bool = false
+    @Published private(set) var pipelineStatus: String = ""
+    @Published private(set) var pipelineError: String?
 
     // Dwell tracking — when did the user select the current story?
     private var selectedAt: Date?
@@ -137,6 +146,35 @@ final class AppModel: ObservableObject {
     }
 
     private var currentEventID: String? { events.first?.id }
+
+    // MARK: - pipeline (manual fetch)
+
+    func runPipeline() {
+        guard !pipelineRunning else { return }
+        pipelineRunning = true
+        pipelineError = nil
+        pipelineStatus = "Starting…"
+
+        Task { [pipelineService] in
+            do {
+                try await pipelineService.run { line in
+                    // Already on main from PipelineService.
+                    self.pipelineStatus = line
+                }
+                await MainActor.run {
+                    self.pipelineStatus = "Done"
+                    self.pipelineRunning = false
+                    self.reload()
+                }
+            } catch {
+                await MainActor.run {
+                    self.pipelineError = error.localizedDescription
+                    self.pipelineStatus = ""
+                    self.pipelineRunning = false
+                }
+            }
+        }
+    }
 
     // MARK: - chat
 

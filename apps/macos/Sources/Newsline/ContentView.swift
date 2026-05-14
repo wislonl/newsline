@@ -55,11 +55,36 @@ struct ContentView: View {
         }
         .navigationTitle("Newsline")
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button(action: model.reload) {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
+            ToolbarItem(placement: .status) {
+                pipelineStatusView
             }
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: model.runPipeline) {
+                    if model.pipelineRunning {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Fetch", systemImage: "arrow.clockwise")
+                    }
+                }
+                .help("Fetch new content (⌘R)")
+                .disabled(model.pipelineRunning)
+            }
+        }
+    }
+
+    // MARK: - Toolbar status
+
+    @ViewBuilder
+    private var pipelineStatusView: some View {
+        if let err = model.pipelineError {
+            Label(err, systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+                .lineLimit(1)
+                .help(err)
+        } else if model.pipelineRunning || !model.pipelineStatus.isEmpty {
+            Text(model.pipelineStatus)
+                .font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
 
