@@ -46,6 +46,7 @@ def run(ctx: click.Context, hours: int | None, no_score: bool, no_match: bool,
             await pipeline.match_storylines()
         if not no_rewrite:
             await pipeline.rewrite_stale_summaries()
+        pipeline.archive_dormant()
 
     asyncio.run(_go())
 

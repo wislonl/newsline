@@ -44,6 +44,15 @@ enum L10n {
         return String(format: "top %.1f", s)
     }
 
+    // Sidebar sections + actions
+    static var sectionToday: String { isChinese ? "今天" : "Today" }
+    static var sectionYesterday: String { isChinese ? "昨天" : "Yesterday" }
+    static var sectionThisWeek: String { isChinese ? "本周" : "This Week" }
+    static var sectionOlder: String { isChinese ? "更早" : "Older" }
+    static var showRead: String { isChinese ? "显示已读" : "Show Read" }
+    static var dismissHelp: String { isChinese ? "屏蔽这条故事" : "Dismiss this story" }
+    static var aiReasonLabel: String { isChinese ? "评分理由" : "Why this score" }
+
     // Chat
     static var chatHeader: String { isChinese ? "针对这个故事提问" : "Ask about this story" }
     static var chatPlaceholder: String {

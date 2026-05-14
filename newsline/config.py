@@ -32,6 +32,21 @@ class AIConfig(BaseModel):
 class FilteringConfig(BaseModel):
     time_window_hours: int = 24
     ai_score_threshold: float = 6.0
+    # Per-source score bias (added after the LLM scores). Use negative
+    # values for already-curated sources where the model overscores
+    # (e.g. HN topstories), positive for sources where high-quality
+    # items are scattered in noise.
+    source_bias: dict[str, float] = Field(default_factory=lambda: {
+        "hackernews": -1.0,   # already top-curated; everything looks "good"
+        "reddit": -0.5,       # also pre-filtered (min_score in config)
+        "rss": 0.0,
+        "github": 0.0,
+        "twitter": 0.0,
+        "telegram": 0.0,
+    })
+    # After how many days of no new event a story is marked dormant
+    # (hidden from the default sidebar). Set 0 to disable.
+    dormant_after_days: int = 30
 
 
 class RSSFeed(BaseModel):

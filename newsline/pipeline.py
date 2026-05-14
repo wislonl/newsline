@@ -84,19 +84,23 @@ class Pipeline:
             return_exceptions=True,
         )
 
+        bias = self.config.filtering.source_bias
         done = 0
         for item, result in zip(pending, results):
             if isinstance(result, Exception) or result is None:
                 continue
+            adj = bias.get(item.source_type.value, 0.0)
+            calibrated = max(0.0, min(10.0, result.score + adj))
             self.db.update_ai_fields(
                 item.id,
-                score=result.score,
+                score=calibrated,
                 reason=result.reason,
                 summary=result.summary,
                 tags=result.tags,
             )
             done += 1
-        self.console.print(f"⭐️ Scored {done} / {len(pending)} items")
+        self.console.print(f"⭐️ Scored {done} / {len(pending)} items "
+                          f"(source bias applied)")
         return done
 
     async def match_storylines(self) -> int:
@@ -130,6 +134,16 @@ class Pipeline:
             f"🧭 Created {new_stories} new stories, attached {attached} follow-ups"
         )
         return new_stories + attached
+
+    def archive_dormant(self) -> int:
+        """Mark stories as dormant if their newest event is past the threshold."""
+        days = self.config.filtering.dormant_after_days
+        if days <= 0:
+            return 0
+        n = self.db.archive_dormant_stories(days=days)
+        if n:
+            self.console.print(f"💤 Archived {n} dormant stories (no events in {days}d)")
+        return n
 
     async def rewrite_stale_summaries(self) -> int:
         """Refresh summaries for multi-event stories whose summary has drifted."""

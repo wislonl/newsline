@@ -92,9 +92,64 @@ final class AppModel: ObservableObject {
     @Published var minScore: Double {
         didSet { UserDefaults.standard.set(minScore, forKey: "newsline.minScore") }
     }
+    @Published var showRead: Bool {
+        didSet { UserDefaults.standard.set(showRead, forKey: "newsline.showRead") }
+    }
 
     var filteredStories: [StoryRow] {
-        stories.filter { ($0.topScore ?? 0) >= minScore }
+        stories.filter { s in
+            guard (s.topScore ?? 0) >= minScore else { return false }
+            if s.isDismissed { return false }
+            if !showRead && s.isRead { return false }
+            return true
+        }
+    }
+
+    /// Bucketed by date for sectioned sidebar display.
+    struct Section: Identifiable {
+        let id: String
+        let title: String
+        let stories: [StoryRow]
+    }
+
+    var groupedStories: [Section] {
+        let cal = Calendar.current
+        let now = Date()
+        let startOfToday = cal.startOfDay(for: now)
+        let startOfYesterday = cal.date(byAdding: .day, value: -1, to: startOfToday)!
+        let weekAgo = cal.date(byAdding: .day, value: -7, to: startOfToday)!
+
+        var todayList: [StoryRow] = []
+        var yesterdayList: [StoryRow] = []
+        var thisWeekList: [StoryRow] = []
+        var olderList: [StoryRow] = []
+
+        for s in filteredStories {
+            guard let d = Self.parseISO(s.lastUpdated) else {
+                olderList.append(s); continue
+            }
+            if d >= startOfToday { todayList.append(s) }
+            else if d >= startOfYesterday { yesterdayList.append(s) }
+            else if d >= weekAgo { thisWeekList.append(s) }
+            else { olderList.append(s) }
+        }
+
+        var sections: [Section] = []
+        if !todayList.isEmpty { sections.append(.init(id: "today", title: L10n.sectionToday, stories: todayList)) }
+        if !yesterdayList.isEmpty { sections.append(.init(id: "y", title: L10n.sectionYesterday, stories: yesterdayList)) }
+        if !thisWeekList.isEmpty { sections.append(.init(id: "w", title: L10n.sectionThisWeek, stories: thisWeekList)) }
+        if !olderList.isEmpty { sections.append(.init(id: "o", title: L10n.sectionOlder, stories: olderList)) }
+        return sections
+    }
+
+    private static let iso1 = ISO8601DateFormatter()
+    private static let iso2: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    static func parseISO(_ s: String) -> Date? {
+        iso2.date(from: s) ?? iso1.date(from: s)
     }
 
     // Dwell tracking — when did the user select the current story?
@@ -103,6 +158,8 @@ final class AppModel: ObservableObject {
     init() {
         let stored = UserDefaults.standard.object(forKey: "newsline.minScore") as? Double
         self.minScore = stored ?? 8.0
+        let storedShowRead = UserDefaults.standard.object(forKey: "newsline.showRead") as? Bool
+        self.showRead = storedShowRead ?? false
         reload()
         watcher = DBWatcher(dbPath: store.dbURL.path) { [weak self] in
             self?.reload()
@@ -152,6 +209,17 @@ final class AppModel: ObservableObject {
         guard let id = currentEventID else { return }
         signals.record(itemID: id, kind: .thumbDown)
         currentThumb = .thumbDown
+    }
+
+    /// Mark the current story dismissed: record signal + remove from sidebar.
+    /// Selecting another story shows fresh content immediately.
+    func dismissCurrent() {
+        guard let storyID = selectedStoryID,
+              let story = stories.first(where: { $0.id == storyID }) else { return }
+        signals.record(itemID: story.leadItemID, kind: .dismiss)
+        // Optimistically update in-memory list; the next reload will agree.
+        stories.removeAll { $0.id == storyID }
+        select(nil)
     }
 
     /// Called when the window/app loses focus or quits — flush any open dwell.

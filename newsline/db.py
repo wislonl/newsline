@@ -267,23 +267,72 @@ class Database:
             ).fetchall()
             return [dict(r) for r in rows]
 
-    def active_stories(self, limit: int = 50) -> list[dict]:
+    def active_stories(self, limit: int = 200) -> list[dict]:
+        """Active storylines plus per-story UI hints.
+
+        Joins:
+          - lead = content_items row with the highest ai_score in the story;
+            its source_type drives the sidebar icon and its id is the proxy
+            for read/dismiss signals.
+          - lead_signals = any open/dismiss signal recorded against the lead.
+        """
         with self.conn() as c:
             rows = c.execute(
                 """
-                SELECT s.id, s.title, s.summary, s.first_seen_at, s.last_updated_at,
-                       COUNT(ci.id) AS event_count,
-                       MAX(ci.ai_score) AS top_score
+                WITH lead AS (
+                  SELECT story_id, id AS lead_id, source_type AS lead_source,
+                         ai_score AS lead_score, ai_reason AS lead_reason
+                    FROM content_items ci
+                   WHERE ci.story_id IS NOT NULL
+                     AND ci.ai_score = (
+                       SELECT MAX(ai_score) FROM content_items
+                        WHERE story_id = ci.story_id
+                     )
+                ),
+                agg AS (
+                  SELECT story_id,
+                         COUNT(*) AS event_count,
+                         MAX(ai_score) AS top_score
+                    FROM content_items
+                   WHERE story_id IS NOT NULL
+                GROUP BY story_id
+                )
+                SELECT s.id, s.title, s.summary,
+                       s.first_seen_at, s.last_updated_at,
+                       a.event_count, a.top_score,
+                       l.lead_id, l.lead_source, l.lead_reason,
+                       EXISTS (
+                         SELECT 1 FROM user_signals us
+                          WHERE us.item_id = l.lead_id AND us.kind = 'open'
+                       ) AS is_read,
+                       EXISTS (
+                         SELECT 1 FROM user_signals us
+                          WHERE us.item_id = l.lead_id AND us.kind = 'dismiss'
+                       ) AS is_dismissed
                   FROM stories s
-                  LEFT JOIN content_items ci ON ci.story_id = s.id
+                  JOIN agg a ON a.story_id = s.id
+                  JOIN lead l ON l.story_id = s.id
                  WHERE s.status = 'active'
-              GROUP BY s.id
               ORDER BY s.last_updated_at DESC
                  LIMIT ?
                 """,
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
+
+    def archive_dormant_stories(self, days: int = 30) -> int:
+        """Mark stories as 'dormant' if their newest event is older than `days`."""
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        with self.conn() as c:
+            cur = c.execute(
+                """
+                UPDATE stories SET status = 'dormant'
+                 WHERE status = 'active'
+                   AND last_updated_at < ?
+                """,
+                (cutoff,),
+            )
+            return cur.rowcount
 
     def resolve_story_id(self, prefix: str) -> str | None:
         """Find a story by id prefix (≥4 chars). Returns None on miss or ambiguity."""

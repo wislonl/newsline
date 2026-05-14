@@ -92,12 +92,12 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 scoreFilterBar
                 Divider()
-                let visible = model.filteredStories
-                if visible.isEmpty {
+                let sections = model.groupedStories
+                if sections.isEmpty {
                     ContentUnavailableView(
                         L10n.isChinese ? "没有 ≥\(Int(model.minScore)) 分的故事" : "Nothing ≥ \(Int(model.minScore))",
                         systemImage: "line.3.horizontal.decrease.circle",
-                        description: Text(L10n.isChinese ? "拖动滑块降低阈值。" : "Lower the threshold to see more.")
+                        description: Text(L10n.isChinese ? "拖动滑块降低阈值，或勾选显示已读。" : "Lower the threshold, or enable Show Read.")
                     )
                     .frame(maxHeight: .infinity)
                 } else {
@@ -105,8 +105,12 @@ struct ContentView: View {
                         get: { model.selectedStoryID },
                         set: { model.select($0) }
                     )) {
-                        ForEach(visible) { story in
-                            StoryRowItem(story: story).tag(story.id)
+                        ForEach(sections) { section in
+                            Section(header: Text(section.title)) {
+                                ForEach(section.stories) { story in
+                                    StoryRowItem(story: story).tag(story.id)
+                                }
+                            }
                         }
                     }
                     .listStyle(.sidebar)
@@ -117,16 +121,23 @@ struct ContentView: View {
 
     @ViewBuilder
     private var scoreFilterBar: some View {
-        let count = model.filteredStories.count
+        let visibleCount = model.groupedStories.reduce(0) { $0 + $1.stories.count }
         let total = model.stories.count
-        HStack(spacing: 8) {
-            Image(systemName: "star.fill").foregroundStyle(.yellow)
-            Text("≥ \(String(format: "%.0f", model.minScore))")
-                .font(.callout).bold().monospacedDigit()
-            Slider(value: $model.minScore, in: 0...10, step: 1)
-                .controlSize(.mini)
-            Text("\(count)/\(total)")
-                .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "star.fill").foregroundStyle(.yellow)
+                Text("≥ \(String(format: "%.0f", model.minScore))")
+                    .font(.callout).bold().monospacedDigit()
+                Slider(value: $model.minScore, in: 0...10, step: 1)
+                    .controlSize(.mini)
+                Text("\(visibleCount)/\(total)")
+                    .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+            }
+            Toggle(L10n.showRead, isOn: $model.showRead)
+                .toggleStyle(.checkbox)
+                .controlSize(.small)
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
     }
@@ -155,6 +166,11 @@ struct ContentView: View {
                         ThumbButton(kind: .thumbDown,
                                     current: model.currentThumb,
                                     action: model.thumbDown)
+                        Button(action: model.dismissCurrent) {
+                            Image(systemName: "eye.slash")
+                        }
+                        .buttonStyle(.plain)
+                        .help(L10n.dismissHelp)
                         if let first = model.events.first,
                            let url = URL(string: first.url) {
                             Link(destination: url) {
@@ -166,6 +182,21 @@ struct ContentView: View {
 
                     if let summary = story.summary, !summary.isEmpty {
                         Text(summary).font(.body)
+                    }
+
+                    if let reason = story.leadReason, !reason.isEmpty {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(.tertiary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(L10n.aiReasonLabel)
+                                    .font(.caption).foregroundStyle(.secondary)
+                                Text(reason).font(.callout).foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 6))
                     }
 
                     // For multi-event stories show the timeline. Single-event
@@ -195,25 +226,67 @@ struct ContentView: View {
 private struct StoryRowItem: View {
     let story: StoryRow
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(story.title)
-                .lineLimit(2)
-                .font(.callout)
-            HStack(spacing: 6) {
-                if story.eventCount > 1 {
-                    Text("\(story.eventCount)×")
-                        .padding(.horizontal, 4)
-                        .background(.tertiary, in: RoundedRectangle(cornerRadius: 3))
+        HStack(alignment: .top, spacing: 8) {
+            SourceBadge(source: story.leadSource)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(story.title)
+                    .lineLimit(2)
+                    .font(.callout)
+                    .foregroundStyle(story.isRead ? Color.secondary : Color.primary)
+                HStack(spacing: 6) {
+                    if !story.isRead {
+                        Circle().fill(.tint).frame(width: 6, height: 6)
+                    }
+                    if story.eventCount > 1 {
+                        Text("\(story.eventCount)×")
+                            .padding(.horizontal, 4)
+                            .background(.tertiary, in: RoundedRectangle(cornerRadius: 3))
+                    }
+                    if let s = story.topScore {
+                        Text(String(format: "%.1f", s)).monospacedDigit()
+                    }
+                    Spacer()
+                    Text(sidebarDate(story.lastUpdated))
                 }
-                if let s = story.topScore {
-                    Text(String(format: "%.1f", s))
-                }
-                Spacer()
-                Text(sidebarDate(story.lastUpdated))
+                .font(.caption2).foregroundStyle(.secondary)
             }
-            .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
+    }
+}
+
+private struct SourceBadge: View {
+    let source: String
+    var body: some View {
+        Image(systemName: icon)
+            .foregroundStyle(color)
+            .font(.system(size: 11, weight: .semibold))
+            .frame(width: 18, height: 18)
+            .background(color.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+            .help(source)
+    }
+    private var icon: String {
+        switch source {
+        case "hackernews": return "y.square.fill"
+        case "reddit":     return "bubble.left.fill"
+        case "rss":        return "dot.radiowaves.left.and.right"
+        case "github":     return "chevron.left.forwardslash.chevron.right"
+        case "twitter":    return "bird"
+        case "telegram":   return "paperplane.fill"
+        default:           return "doc"
+        }
+    }
+    private var color: Color {
+        switch source {
+        case "hackernews": return .orange
+        case "reddit":     return .red
+        case "rss":        return .blue
+        case "github":     return .purple
+        case "twitter":    return .cyan
+        case "telegram":   return .indigo
+        default:           return .gray
+        }
     }
 }
 

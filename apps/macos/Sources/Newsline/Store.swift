@@ -17,17 +17,38 @@ final class Store {
         FileManager.default.fileExists(atPath: dbURL.path)
     }
 
-    func activeStories(limit: Int = 100) -> [StoryRow] {
+    func activeStories(limit: Int = 200) -> [StoryRow] {
         guard let db = open() else { return [] }
         defer { sqlite3_close(db) }
 
         let sql = """
+            WITH lead AS (
+                SELECT story_id, id AS lead_id, source_type AS lead_source,
+                       ai_reason AS lead_reason, ai_score AS lead_score
+                  FROM content_items ci
+                 WHERE ci.story_id IS NOT NULL
+                   AND ci.ai_score = (
+                       SELECT MAX(ai_score) FROM content_items
+                        WHERE story_id = ci.story_id
+                   )
+            ),
+            agg AS (
+                SELECT story_id, COUNT(*) AS event_count, MAX(ai_score) AS top_score
+                  FROM content_items
+                 WHERE story_id IS NOT NULL
+                 GROUP BY story_id
+            )
             SELECT s.id, s.title, s.summary, s.last_updated_at,
-                   COUNT(ci.id) AS event_count, MAX(ci.ai_score) AS top_score
+                   a.event_count, a.top_score,
+                   l.lead_id, l.lead_source, l.lead_reason,
+                   EXISTS (SELECT 1 FROM user_signals us
+                            WHERE us.item_id = l.lead_id AND us.kind = 'open') AS is_read,
+                   EXISTS (SELECT 1 FROM user_signals us
+                            WHERE us.item_id = l.lead_id AND us.kind = 'dismiss') AS is_dismissed
               FROM stories s
-              LEFT JOIN content_items ci ON ci.story_id = s.id
+              JOIN agg a ON a.story_id = s.id
+              JOIN lead l ON l.story_id = s.id
              WHERE s.status = 'active'
-             GROUP BY s.id
              ORDER BY s.last_updated_at DESC
              LIMIT ?
             """
@@ -44,7 +65,12 @@ final class Store {
                 summary: text(stmt, 2),
                 lastUpdated: text(stmt, 3) ?? "",
                 eventCount: Int(sqlite3_column_int(stmt, 4)),
-                topScore: sqlite3_column_type(stmt, 5) == SQLITE_NULL ? nil : sqlite3_column_double(stmt, 5)
+                topScore: sqlite3_column_type(stmt, 5) == SQLITE_NULL ? nil : sqlite3_column_double(stmt, 5),
+                leadItemID: text(stmt, 6) ?? "",
+                leadSource: text(stmt, 7) ?? "",
+                leadReason: text(stmt, 8),
+                isRead: sqlite3_column_int(stmt, 9) != 0,
+                isDismissed: sqlite3_column_int(stmt, 10) != 0
             ))
         }
         return out
@@ -114,6 +140,13 @@ struct StoryRow: Identifiable, Hashable {
     let lastUpdated: String
     let eventCount: Int
     let topScore: Double?
+    /// content_items.id of the highest-scoring event in this story.
+    /// Used as the proxy item for read/dismiss signals.
+    let leadItemID: String
+    let leadSource: String       // e.g. "rss", "hackernews", "reddit"
+    let leadReason: String?      // ai_reason of the lead event
+    let isRead: Bool
+    let isDismissed: Bool
 }
 
 struct EventRow: Identifiable, Hashable {
