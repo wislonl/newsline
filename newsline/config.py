@@ -17,6 +17,7 @@ class AIConfig(BaseModel):
     api_key_env: str = "ANTHROPIC_API_KEY"
     base_url: Optional[str] = None     # override for OpenAI-compatible providers
     temperature: float = 0.3
+    language: str = "en"               # "en" | "zh" — drives user-facing LLM output
 
     @property
     def api_key(self) -> str:

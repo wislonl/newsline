@@ -6,6 +6,7 @@ import re
 
 from ..models import ContentItem
 from .client import LLMClient
+from .language import directive_for
 
 CHAT_SYSTEM = """You answer questions about ONE specific news story.
 
@@ -46,15 +47,20 @@ def build_user_prompt(title: str, summary: str | None, events: list[ContentItem]
 
 
 class Chatter:
-    def __init__(self, client: LLMClient):
+    def __init__(self, client: LLMClient, language: str = "en"):
         self.client = client
+        self._system = CHAT_SYSTEM + directive_for(language)
+        self._empty_reply = (
+            "这个故事还没有事件可供参考。" if language.lower() == "zh"
+            else "The events don't say — this story has no attached items."
+        )
 
     async def ask(self, *, title: str, summary: str | None,
                   events: list[ContentItem], question: str) -> str:
         if not events:
-            return "The events don't say — this story has no attached items."
+            return self._empty_reply
         user = build_user_prompt(title, summary, events, question)
-        raw = await self.client.complete_text(CHAT_SYSTEM, user, max_tokens=1200)
+        raw = await self.client.complete_text(self._system, user, max_tokens=1200)
         return _strip_reasoning(raw)
 
 

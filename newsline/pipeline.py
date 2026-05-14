@@ -77,7 +77,7 @@ class Pipeline:
 
         self.console.print(f"🤖 Scoring {len(pending)} items with {self.config.ai.model}")
         client = create_client(self.config.ai)
-        scorer = Scorer(client)
+        scorer = Scorer(client, language=self.config.ai.language)
 
         results = await asyncio.gather(
             *(scorer.score(item) for item in pending),
@@ -139,7 +139,7 @@ class Pipeline:
 
         self.console.print(f"📝 Rewriting {len(stale)} stale story summaries")
         client = create_client(self.config.ai)
-        rewriter = SummaryRewriter(client)
+        rewriter = SummaryRewriter(client, language=self.config.ai.language)
 
         async def _one(row: dict) -> bool:
             events = self.db.story_events(row["id"])

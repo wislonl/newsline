@@ -12,6 +12,7 @@ import asyncio
 from ..models import ContentItem
 from .client import LLMClient
 from .jsonio import extract_json
+from .language import directive_for
 
 REWRITE_SYSTEM = """You write evolving-story summaries.
 
@@ -35,9 +36,10 @@ Respond with VALID JSON ONLY:
 
 
 class SummaryRewriter:
-    def __init__(self, client: LLMClient, concurrency: int = 2):
+    def __init__(self, client: LLMClient, concurrency: int = 2, language: str = "en"):
         self.client = client
         self._sem = asyncio.Semaphore(concurrency)
+        self._system = REWRITE_SYSTEM + directive_for(language)
 
     async def rewrite(self, title: str, events: list[ContentItem]) -> str | None:
         lines = []
@@ -50,7 +52,7 @@ class SummaryRewriter:
 
         async with self._sem:
             try:
-                raw = await self.client.complete_json(REWRITE_SYSTEM, user)
+                raw = await self.client.complete_json(self._system, user)
             except Exception:
                 return None
 

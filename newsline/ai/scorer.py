@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from ..models import ContentItem
 from .client import LLMClient
 from .jsonio import extract_json
+from .language import directive_for
 
 SYSTEM_PROMPT = """You are a content curator scoring news items on a 0-10 importance scale.
 
@@ -44,9 +45,10 @@ class ScoreResult:
 
 
 class Scorer:
-    def __init__(self, client: LLMClient, concurrency: int = 4):
+    def __init__(self, client: LLMClient, concurrency: int = 4, language: str = "en"):
         self.client = client
         self._sem = asyncio.Semaphore(concurrency)
+        self._system = SYSTEM_PROMPT + directive_for(language)
 
     async def score(self, item: ContentItem) -> ScoreResult | None:
         content = (item.content or "").strip()
@@ -64,7 +66,7 @@ class Scorer:
 
         async with self._sem:
             try:
-                raw = await self.client.complete_json(SYSTEM_PROMPT, user)
+                raw = await self.client.complete_json(self._system, user)
             except Exception:
                 return None
 

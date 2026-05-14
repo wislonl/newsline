@@ -165,7 +165,7 @@ def chat(ctx: click.Context, story_id: str, question: str) -> None:
 
     async def _go() -> None:
         client = create_client(cfg.ai)
-        chatter = Chatter(client)
+        chatter = Chatter(client, language=cfg.ai.language)
         answer = await chatter.ask(
             title=title, summary=summary, events=events, question=question
         )
