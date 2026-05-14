@@ -51,6 +51,11 @@ enum L10n {
     static var sectionOlder: String { isChinese ? "更早" : "Older" }
     static var showRead: String { isChinese ? "显示已读" : "Show Read" }
     static var dismissHelp: String { isChinese ? "屏蔽这条故事" : "Dismiss this story" }
+    static var undo: String { isChinese ? "撤销" : "Undo" }
+    static func dismissedBanner(_ title: String) -> String {
+        let trimmed = title.count > 30 ? String(title.prefix(30)) + "…" : title
+        return isChinese ? "已屏蔽「\(trimmed)」" : "Dismissed “\(trimmed)”"
+    }
     static var aiReasonLabel: String { isChinese ? "评分理由" : "Why this score" }
     static var searchPlaceholder: String { isChinese ? "搜索故事…" : "Search stories…" }
     static var tagsLabel: String { isChinese ? "标签" : "Tags" }

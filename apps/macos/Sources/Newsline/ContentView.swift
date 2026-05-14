@@ -40,6 +40,14 @@ struct ContentView: View {
         }
         .navigationTitle(L10n.windowTitle)
         .background(keyboardCommands)  // invisible buttons for j/k/space/Enter/Cmd+F
+        .overlay(alignment: .bottom) {
+            if let u = model.pendingUndo {
+                UndoBanner(undo: u, onUndo: model.undoDismiss)
+                    .padding(20)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.pendingUndo)
         .toolbar {
             ToolbarItem(placement: .status) {
                 pipelineStatusView
@@ -403,6 +411,9 @@ private struct ChatPanel: View {
         let q = draft
         draft = ""
         model.ask(q)
+        // Keep the input field hot so the user can fire follow-ups
+        // without grabbing the mouse.
+        inputFocused = true
     }
 }
 
@@ -434,6 +445,25 @@ private struct ChatBubble: View {
         case .assistant: return AnyShapeStyle(.background.secondary)
         case .error:     return AnyShapeStyle(Color.red.opacity(0.12))
         }
+    }
+}
+
+private struct UndoBanner: View {
+    let undo: AppModel.DismissUndo
+    let onUndo: () -> Void
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "eye.slash")
+            Text(L10n.dismissedBanner(undo.title))
+                .lineLimit(1)
+            Spacer()
+            Button(L10n.undo, action: onUndo)
+                .keyboardShortcut("z", modifiers: .command)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(radius: 8, y: 2)
+        .frame(maxWidth: 480)
     }
 }
 

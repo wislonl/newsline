@@ -63,6 +63,28 @@ final class Signals {
         }
     }
 
+    /// Delete all signals of a kind for an item. Used by dismiss-undo.
+    func delete(itemID: String, kind: Kind) {
+        guard !itemID.isEmpty else { return }
+        DispatchQueue.global(qos: .utility).async { [dbURL] in
+            var db: OpaquePointer?
+            let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
+            guard sqlite3_open_v2(dbURL.path, &db, flags, nil) == SQLITE_OK else {
+                if let db { sqlite3_close(db) }
+                return
+            }
+            defer { sqlite3_close(db) }
+            sqlite3_busy_timeout(db, 1000)
+            var stmt: OpaquePointer?
+            let sql = "DELETE FROM user_signals WHERE item_id = ? AND kind = ?"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, (itemID as NSString).utf8String, -1, nil)
+            sqlite3_bind_text(stmt, 2, (kind.rawValue as NSString).utf8String, -1, nil)
+            _ = sqlite3_step(stmt)
+        }
+    }
+
     /// Latest thumb verdict per item. Returns thumbUp/thumbDown or nil.
     func currentThumb(itemID: String) -> Kind? {
         var db: OpaquePointer?

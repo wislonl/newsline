@@ -70,8 +70,19 @@ final class AppModel: ObservableObject {
     private(set) lazy var signals = Signals(dbURL: store.dbURL)
     private let chatService = ChatService()
     private let pipelineService = PipelineService()
+    private(set) lazy var chatStore = ChatStore(dbURL: store.dbURL)
     let sidecar = Sidecar()
     private var watcher: DBWatcher?
+    private var statusClearTask: Task<Void, Never>?
+
+    /// Last story dismissed, retained briefly so the user can hit "撤销".
+    struct DismissUndo: Equatable {
+        let storyID: String
+        let leadItemID: String
+        let title: String
+    }
+    @Published var pendingUndo: DismissUndo?
+    private var undoExpireTask: Task<Void, Never>?
     @Published var stories: [StoryRow] = []
     @Published var selectedStoryID: String?
     @Published var events: [EventRow] = []
@@ -176,6 +187,15 @@ final class AppModel: ObservableObject {
             self?.reload()
         }
         watcher?.start()
+
+        // Auto-select first visible story so j/k/space work immediately.
+        if selectedStoryID == nil, let first = groupedStories.first?.stories.first {
+            select(first.id)
+        }
+
+        // Pre-warm the chat sidecar in the background so the first user
+        // question doesn't pay the 1-2s health-check wait.
+        Task { [sidecar] in _ = try? await sidecar.ensureRunning() }
     }
 
     deinit {
@@ -198,6 +218,11 @@ final class AppModel: ObservableObject {
 
         selectedStoryID = id
         events = id.map(store.events(storyID:)) ?? []
+
+        // Lazy-load persisted chat for this story (once per session).
+        if let id, chats[id] == nil {
+            chats[id] = chatStore.load(storyID: id)
+        }
 
         // Record open for the representative (first) event.
         if let first = events.first {
@@ -258,14 +283,36 @@ final class AppModel: ObservableObject {
     }
 
     /// Mark the current story dismissed: record signal + remove from sidebar.
-    /// Selecting another story shows fresh content immediately.
+    /// Selecting another story shows fresh content immediately. The
+    /// dismiss is held as `pendingUndo` for 8 seconds so accidental
+    /// clicks can be reversed without diving into SQL.
     func dismissCurrent() {
         guard let storyID = selectedStoryID,
               let story = stories.first(where: { $0.id == storyID }) else { return }
         signals.record(itemID: story.leadItemID, kind: .dismiss)
-        // Optimistically update in-memory list; the next reload will agree.
+        pendingUndo = DismissUndo(
+            storyID: story.id, leadItemID: story.leadItemID, title: story.title)
         stories.removeAll { $0.id == storyID }
         select(nil)
+        scheduleUndoExpire()
+    }
+
+    func undoDismiss() {
+        guard let u = pendingUndo else { return }
+        signals.delete(itemID: u.leadItemID, kind: .dismiss)
+        pendingUndo = nil
+        undoExpireTask?.cancel()
+        // Re-read DB so the story comes back into the list.
+        reload()
+        select(u.storyID)
+    }
+
+    private func scheduleUndoExpire() {
+        undoExpireTask?.cancel()
+        undoExpireTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            if !Task.isCancelled { self.pendingUndo = nil }
+        }
     }
 
     /// Called when the window/app loses focus or quits — flush any open dwell.
@@ -280,6 +327,14 @@ final class AppModel: ObservableObject {
     }
 
     private var currentEventID: String? { events.first?.id }
+
+    private func scheduleStatusClear() {
+        statusClearTask?.cancel()
+        statusClearTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled { self.pipelineStatus = "" }
+        }
+    }
 
     // MARK: - pipeline (manual fetch)
 
@@ -299,6 +354,7 @@ final class AppModel: ObservableObject {
                     self.pipelineStatus = "Done"
                     self.pipelineRunning = false
                     self.reload()
+                    self.scheduleStatusClear()
                 }
             } catch {
                 await MainActor.run {
@@ -329,13 +385,14 @@ final class AppModel: ObservableObject {
             }
         }
         chats[storyID, default: []].append(ChatMessage(role: .user, text: trimmed))
+        chatStore.append(storyID: storyID, role: .user, text: trimmed)
         // Append a draft assistant message we'll fill in as chunks arrive.
         let draft = ChatMessage(role: .assistant, text: "")
         chats[storyID, default: []].append(draft)
         let draftID = draft.id
         chatPending = true
 
-        Task { [chatService, sidecar] in
+        Task { [chatService, sidecar, chatStore] in
             do {
                 let base = try await sidecar.ensureRunning()
                 let stream = chatService.askStream(
@@ -349,7 +406,11 @@ final class AppModel: ObservableObject {
                         self.replaceDraft(storyID: storyID, id: draftID, text: snapshot)
                     }
                 }
+                let finalText = accumulated
                 await MainActor.run {
+                    if !finalText.isEmpty {
+                        chatStore.append(storyID: storyID, role: .assistant, text: finalText)
+                    }
                     if self.selectedStoryID == storyID { self.chatPending = false }
                 }
             } catch {

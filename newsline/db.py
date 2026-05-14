@@ -16,7 +16,7 @@ from typing import Iterator, Optional
 
 from .models import ContentItem, SourceType
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Python 3.12 removed default datetime adapters from sqlite3. Register explicit
 # ISO-8601 ones so TIMESTAMP columns round-trip cleanly.
@@ -88,6 +88,18 @@ CREATE TABLE IF NOT EXISTS user_signals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_signals_item ON user_signals(item_id);
+
+-- Chat history per storyline, written by the Mac app.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    story_id    TEXT NOT NULL,
+    role        TEXT NOT NULL,           -- user | assistant
+    text        TEXT NOT NULL,
+    ts          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (story_id) REFERENCES stories(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_story ON chat_messages(story_id, ts);
 """
 
 
