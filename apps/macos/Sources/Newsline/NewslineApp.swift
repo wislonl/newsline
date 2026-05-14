@@ -1,8 +1,10 @@
 import SwiftUI
+import AppKit
 
 @main
 struct NewslineApp: App {
     @StateObject private var model = AppModel()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         WindowGroup("Newsline") {
@@ -17,6 +19,20 @@ struct NewslineApp: App {
                     .keyboardShortcut("r", modifiers: .command)
             }
         }
+    }
+}
+
+/// SwiftPM-built apps don't register with LaunchServices, so without this the
+/// window stays hidden behind the launching terminal. Force regular activation
+/// and bring the window to the front.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
     }
 }
 
