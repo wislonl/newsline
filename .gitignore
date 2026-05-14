@@ -29,3 +29,8 @@ data/
 # Build
 dist/
 build/
+
+# Swift
+apps/macos/.build/
+apps/macos/.swiftpm/
+apps/macos/Package.resolved
