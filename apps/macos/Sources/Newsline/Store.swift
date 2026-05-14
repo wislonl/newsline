@@ -85,12 +85,19 @@ final class Store {
 
     private func open() -> OpaquePointer? {
         var db: OpaquePointer?
-        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_NOMUTEX
+        // RW (not RO) even though we only SELECT. WAL mode databases need to
+        // create/touch the -shm shared-memory file on every connection, and
+        // SQLITE_OPEN_READONLY refuses to do that — `prepare` then fails with
+        // "unable to open database file". The Store class never executes any
+        // INSERT/UPDATE/DELETE, so RW is still effectively read-only.
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX
         let rc = sqlite3_open_v2(dbURL.path, &db, flags, nil)
         if rc != SQLITE_OK {
             if let db { sqlite3_close(db) }
             return nil
         }
+        // Be patient if the daemon happens to be mid-commit.
+        sqlite3_busy_timeout(db, 1000)
         return db
     }
 
