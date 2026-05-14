@@ -75,7 +75,7 @@ final class AppModel: ObservableObject {
 
     init() {
         reload()
-        watcher = DBWatcher(path: store.dbURL.path) { [weak self] in
+        watcher = DBWatcher(dbPath: store.dbURL.path) { [weak self] in
             self?.reload()
         }
         watcher?.start()
