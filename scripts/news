@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# news — one entry point for newsline
+#
+#   news                    open the Mac reader (default)
+#   news run [--hours N]    fetch + score + match + rewrite once
+#   news stories            list active storylines
+#   news story <id-prefix>  show one storyline's timeline
+#   news chat <id> "..."    ask a question grounded in a story
+#   news signals [--days N] inspect feedback signals
+#   news kick               trigger the daily LaunchAgent right now
+#   news log                tail the daemon log
+#   news where              print the data dir
+
+set -euo pipefail
+PROJECT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/.." && pwd)"
+
+cmd="${1:-app}"
+case "$cmd" in
+    app|open|"")
+        cd "$PROJECT_DIR/apps/macos"
+        exec swift run -q Newsline
+        ;;
+    kick)
+        exec launchctl kickstart -k "gui/$(id -u)/com.newsline.daily"
+        ;;
+    log)
+        exec tail -f "$HOME/Library/Logs/newsline.log"
+        ;;
+    -h|--help|help)
+        sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        cd "$PROJECT_DIR"
+        exec uv run --quiet newsline "$@"
+        ;;
+esac
