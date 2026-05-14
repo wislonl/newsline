@@ -47,16 +47,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+struct ChatMessage: Identifiable, Hashable {
+    enum Role { case user, assistant, error }
+    let id = UUID()
+    let role: Role
+    let text: String
+}
+
 @MainActor
 final class AppModel: ObservableObject {
     private let store = Store()
     private(set) lazy var signals = Signals(dbURL: store.dbURL)
+    private let chatService = ChatService()
     private var watcher: DBWatcher?
     @Published var stories: [StoryRow] = []
     @Published var selectedStoryID: String?
     @Published var events: [EventRow] = []
     @Published var dbExists: Bool = true
     @Published var currentThumb: Signals.Kind?
+
+    /// In-memory chat history per story. Lost on quit (intentional for M4-1).
+    @Published private(set) var chats: [String: [ChatMessage]] = [:]
+    @Published private(set) var chatPending: Bool = false
 
     // Dwell tracking — when did the user select the current story?
     private var selectedAt: Date?
@@ -125,4 +137,35 @@ final class AppModel: ObservableObject {
     }
 
     private var currentEventID: String? { events.first?.id }
+
+    // MARK: - chat
+
+    var currentMessages: [ChatMessage] {
+        selectedStoryID.flatMap { chats[$0] } ?? []
+    }
+
+    func ask(_ question: String) {
+        let trimmed = question.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let storyID = selectedStoryID else { return }
+        chats[storyID, default: []].append(ChatMessage(role: .user, text: trimmed))
+        chatPending = true
+
+        Task { [chatService] in
+            do {
+                let answer = try await chatService.ask(storyID: storyID, question: trimmed)
+                await MainActor.run {
+                    // Only append to the right story — user may have switched.
+                    self.chats[storyID, default: []].append(
+                        ChatMessage(role: .assistant, text: answer))
+                    if self.selectedStoryID == storyID { self.chatPending = false }
+                }
+            } catch {
+                await MainActor.run {
+                    self.chats[storyID, default: []].append(
+                        ChatMessage(role: .error, text: error.localizedDescription))
+                    if self.selectedStoryID == storyID { self.chatPending = false }
+                }
+            }
+        }
+    }
 }

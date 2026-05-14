@@ -138,6 +138,9 @@ struct ContentView: View {
                             EventCard(event: e)
                         }
                     }
+
+                    Divider().padding(.vertical, 8)
+                    ChatPanel()
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,6 +175,72 @@ private struct StoryRowItem: View {
             .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(.vertical, 2)
+    }
+}
+
+private struct ChatPanel: View {
+    @EnvironmentObject var model: AppModel
+    @State private var draft: String = ""
+    @FocusState private var inputFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Ask about this story").font(.headline)
+                Spacer()
+                if model.chatPending {
+                    ProgressView().controlSize(.small)
+                }
+            }
+
+            ForEach(model.currentMessages) { msg in
+                ChatBubble(message: msg)
+            }
+
+            HStack(spacing: 8) {
+                TextField("What changed? Why does this matter? …",
+                          text: $draft, axis: .vertical)
+                    .lineLimit(1...4)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($inputFocused)
+                    .onSubmit(send)
+                Button(action: send) {
+                    Image(systemName: "paperplane.fill")
+                }
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                          || model.chatPending)
+                .keyboardShortcut(.return, modifiers: .command)
+            }
+        }
+    }
+
+    private func send() {
+        let q = draft
+        draft = ""
+        model.ask(q)
+    }
+}
+
+private struct ChatBubble: View {
+    let message: ChatMessage
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            if message.role == .user { Spacer(minLength: 60) }
+            Text(message.text)
+                .textSelection(.enabled)
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(background, in: RoundedRectangle(cornerRadius: 8))
+                .foregroundStyle(message.role == .error ? .red : .primary)
+            if message.role != .user { Spacer(minLength: 60) }
+        }
+    }
+
+    private var background: AnyShapeStyle {
+        switch message.role {
+        case .user:      return AnyShapeStyle(.tint.opacity(0.18))
+        case .assistant: return AnyShapeStyle(.background.secondary)
+        case .error:     return AnyShapeStyle(Color.red.opacity(0.12))
+        }
     }
 }
 
