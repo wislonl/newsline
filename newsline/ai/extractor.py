@@ -13,20 +13,32 @@ from ..models import ContentItem
 from .client import LLMClient
 from .jsonio import extract_json
 
-EXTRACT_SYSTEM = """You extract canonical named entities from a news item.
+EXTRACT_SYSTEM = """You extract canonical named entities that a news item is primarily ABOUT.
 
-Return only specific, disambiguating entities:
-- Companies / organizations (Anthropic, OpenAI, EU Commission)
-- Products / projects (Claude, GPT-5, Linux kernel, React Native)
-- People (Sam Altman, Dario Amodei)
-- Specific technologies / standards (HTTP/3, RISC-V, llama.cpp)
-- Version identifiers when present (v4.7, 2024.10)
-- Place names when newsworthy (Taiwan, Brussels)
+Critical rule: extract only the SUBJECT of the story, not entities that are
+merely MENTIONED in passing or used as tools.
 
-DO NOT include generic topics ("AI", "machine learning", "news"), adjectives,
-or tags. If unsure whether something is specific, omit it.
+Good examples:
+  Story: "Anthropic launches Claude 4.7"  →  ["Anthropic", "Claude 4.7"]
+  Story: "Rars: a Rust RAR implementation, mostly written by GPT-5.5"
+    →  ["Rars", "Rust"]   (NOT "GPT-5.5" — it's the tool, not the subject)
+  Story: "Simon Willison reviews the new OpenAI API"
+    →  ["OpenAI API"]     (NOT "Simon Willison" — he's the reviewer/author)
 
-Use canonical English form. Deduplicate. 0–8 entities total."""
+Entity types to consider when they ARE the subject:
+- Companies / organizations
+- Products / projects / specific services
+- People (only when the story is about THEM, not when they're just the author)
+- Specific technologies, standards, or version identifiers
+- Place names when newsworthy
+
+DO NOT include:
+- Generic topics ("AI", "machine learning", "open source")
+- Tools or LLMs used to make the thing (unless that's the story)
+- Authors / bylines (unless the story is profiling them)
+- Adjectives, tags, categories
+
+Use canonical English form. Deduplicate. 1–5 entities total. If unsure, omit."""
 
 EXTRACT_USER = """Extract entities from this item. Respond with VALID JSON ONLY:
 {{
@@ -85,4 +97,4 @@ def _normalize_entities(ents) -> list[str]:
             continue
         seen.add(key)
         out.append(e)
-    return out[:8]
+    return out[:5]
