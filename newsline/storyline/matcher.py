@@ -86,10 +86,9 @@ class StorylineMatcher:
             return decision.story_id, False
 
         new_id = secrets.token_hex(8)
-        title = (item.ai_summary or item.title)[:200]
         self.db.create_story(
             story_id=new_id,
-            title=title,
+            title=item.title[:200],
             summary=item.ai_summary,
             entities=entities,
             when=when,

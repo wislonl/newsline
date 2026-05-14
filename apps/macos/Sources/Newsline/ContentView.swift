@@ -1,5 +1,49 @@
 import SwiftUI
 
+private let isoParser: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return f
+}()
+
+private let isoParserNoFraction: ISO8601DateFormatter = {
+    let f = ISO8601DateFormatter()
+    f.formatOptions = [.withInternetDateTime]
+    return f
+}()
+
+private let displayFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateStyle = .medium
+    f.timeStyle = .short
+    return f
+}()
+
+private let sidebarDateFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d"
+    return f
+}()
+
+/// Parse the timestamps written by the Python daemon (datetime.isoformat()).
+/// They look like `2026-05-14T00:19:33.123456+00:00` or without fraction.
+private func parseTimestamp(_ s: String?) -> Date? {
+    guard let s, !s.isEmpty else { return nil }
+    return isoParser.date(from: s) ?? isoParserNoFraction.date(from: s)
+}
+
+private func displayDate(_ s: String?) -> String {
+    parseTimestamp(s).map(displayFormatter.string(from:)) ?? (s ?? "")
+}
+
+private func sidebarDate(_ s: String?) -> String {
+    parseTimestamp(s).map(sidebarDateFormatter.string(from:)) ?? (s?.prefix(10).description ?? "")
+}
+
+private func pluralize(_ n: Int, _ singular: String) -> String {
+    "\(n) \(singular)\(n == 1 ? "" : "s")"
+}
+
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
 
@@ -59,12 +103,19 @@ struct ContentView: View {
                     Text(story.title)
                         .font(.title2).bold()
                     HStack(spacing: 12) {
-                        Label("\(story.eventCount) events", systemImage: "circle.dotted")
+                        Label(pluralize(story.eventCount, "event"), systemImage: "circle.dotted")
                         if let s = story.topScore {
                             Label(String(format: "top %.1f", s), systemImage: "star")
                         }
-                        Text(story.lastUpdated.prefix(16))
+                        Text(displayDate(story.lastUpdated))
                             .foregroundStyle(.secondary)
+                        Spacer()
+                        if let first = model.events.first,
+                           let url = URL(string: first.url) {
+                            Link(destination: url) {
+                                Label("Open", systemImage: "arrow.up.right.square")
+                            }
+                        }
                     }
                     .font(.callout).foregroundStyle(.secondary)
 
@@ -72,11 +123,14 @@ struct ContentView: View {
                         Text(summary).font(.body)
                     }
 
-                    Divider().padding(.vertical, 8)
-                    Text("Timeline").font(.headline)
-
-                    ForEach(model.events) { e in
-                        EventCard(event: e)
+                    // For multi-event stories show the timeline. Single-event
+                    // stories already showed everything above; no need to repeat.
+                    if model.events.count > 1 {
+                        Divider().padding(.vertical, 8)
+                        Text("Timeline").font(.headline)
+                        ForEach(model.events) { e in
+                            EventCard(event: e)
+                        }
                     }
                 }
                 .padding(24)
@@ -98,12 +152,16 @@ private struct StoryRowItem: View {
                 .lineLimit(2)
                 .font(.callout)
             HStack(spacing: 6) {
-                Text("\(story.eventCount)")
+                if story.eventCount > 1 {
+                    Text("\(story.eventCount)×")
+                        .padding(.horizontal, 4)
+                        .background(.tertiary, in: RoundedRectangle(cornerRadius: 3))
+                }
                 if let s = story.topScore {
-                    Text(String(format: "· %.1f", s))
+                    Text(String(format: "%.1f", s))
                 }
                 Spacer()
-                Text(story.lastUpdated.prefix(10))
+                Text(sidebarDate(story.lastUpdated))
             }
             .font(.caption2).foregroundStyle(.secondary)
         }
@@ -116,9 +174,8 @@ private struct EventCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-                if let when = event.publishedAt?.prefix(16) {
-                    Text(when).font(.caption).foregroundStyle(.secondary)
-                }
+                Text(displayDate(event.publishedAt))
+                    .font(.caption).foregroundStyle(.secondary)
                 Text(event.sourceType)
                     .font(.caption)
                     .padding(.horizontal, 6).padding(.vertical, 2)
