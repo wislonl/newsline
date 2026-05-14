@@ -16,7 +16,7 @@ from typing import Iterator, Optional
 
 from .models import ContentItem, SourceType
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Python 3.12 removed default datetime adapters from sqlite3. Register explicit
 # ISO-8601 ones so TIMESTAMP columns round-trip cleanly.
@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS stories (
     entities            TEXT,                   -- JSON
     first_seen_at       TIMESTAMP NOT NULL,
     last_updated_at     TIMESTAMP NOT NULL,
+    summary_updated_at  TIMESTAMP,              -- bumped after an LLM rewrite
     embedding           BLOB                    -- filled in M1
 );
 
@@ -110,6 +111,12 @@ class Database:
             cols = {r["name"] for r in c.execute("PRAGMA table_info(content_items)").fetchall()}
             if "entities" not in cols:
                 c.execute("ALTER TABLE content_items ADD COLUMN entities TEXT")
+            scols = {r["name"] for r in c.execute("PRAGMA table_info(stories)").fetchall()}
+            if "summary_updated_at" not in scols:
+                c.execute("ALTER TABLE stories ADD COLUMN summary_updated_at TIMESTAMP")
+                # backfill: treat existing summaries as fresh at creation time
+                c.execute("UPDATE stories SET summary_updated_at = first_seen_at "
+                          "WHERE summary_updated_at IS NULL")
             row = c.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
             if row is None:
                 c.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
@@ -206,7 +213,12 @@ class Database:
     def attach_item_to_story(self, item_id: str, story_id: str, when: datetime) -> None:
         with self.conn() as c:
             c.execute("UPDATE content_items SET story_id = ? WHERE id = ?", (story_id, item_id))
-            c.execute("UPDATE stories SET last_updated_at = ? WHERE id = ?", (when, story_id))
+            # Only advance — back-dated events shouldn't drag last_updated_at backwards.
+            c.execute(
+                "UPDATE stories SET last_updated_at = ? "
+                "WHERE id = ? AND last_updated_at < ?",
+                (when, story_id, when),
+            )
 
     # ---- stories ------------------------------------------------------------
 
@@ -216,10 +228,11 @@ class Database:
             c.execute(
                 """
                 INSERT INTO stories
-                  (id, title, summary, status, entities, first_seen_at, last_updated_at)
-                VALUES (?, ?, ?, 'active', ?, ?, ?)
+                  (id, title, summary, status, entities,
+                   first_seen_at, last_updated_at, summary_updated_at)
+                VALUES (?, ?, ?, 'active', ?, ?, ?, ?)
                 """,
-                (story_id, title, summary, json.dumps(entities), when, when),
+                (story_id, title, summary, json.dumps(entities), when, when, when),
             )
             c.executemany(
                 "INSERT OR IGNORE INTO story_entities (story_id, entity) VALUES (?, ?)",
@@ -281,6 +294,40 @@ class Database:
         if len(rows) != 1:
             return None
         return rows[0]["id"]
+
+    def stories_with_stale_summary(self, min_events: int = 2) -> list[dict]:
+        """Stories where new events have been attached since the last summary.
+
+        Uses MAX(content_items.fetched_at) — the wall-clock time the event
+        row was inserted — rather than published_at (real-world event time,
+        which can be older than the story's creation if a backdated post
+        attaches later).
+        """
+        with self.conn() as c:
+            rows = c.execute(
+                """
+                SELECT s.id, s.title, s.summary, s.summary_updated_at,
+                       s.last_updated_at, COUNT(ci.id) AS event_count,
+                       MAX(ci.fetched_at) AS last_event_fetched_at
+                  FROM stories s
+                  JOIN content_items ci ON ci.story_id = s.id
+                 WHERE s.status = 'active'
+              GROUP BY s.id
+                HAVING event_count >= ?
+                   AND (s.summary_updated_at IS NULL
+                        OR MAX(ci.fetched_at) > s.summary_updated_at)
+              ORDER BY last_event_fetched_at DESC
+                """,
+                (min_events,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def update_story_summary(self, story_id: str, summary: str, when: datetime) -> None:
+        with self.conn() as c:
+            c.execute(
+                "UPDATE stories SET summary = ?, summary_updated_at = ? WHERE id = ?",
+                (summary, when, story_id),
+            )
 
     def story_events(self, story_id: str) -> list[ContentItem]:
         with self.conn() as c:

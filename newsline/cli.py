@@ -31,9 +31,11 @@ def cli(ctx: click.Context, config_path: Path) -> None:
 @click.option("--hours", type=int, default=None, help="Override fetch window")
 @click.option("--no-score", is_flag=True, help="Skip AI scoring step")
 @click.option("--no-match", is_flag=True, help="Skip storyline matching step")
+@click.option("--no-rewrite", is_flag=True, help="Skip stale-summary rewrite step")
 @click.pass_context
-def run(ctx: click.Context, hours: int | None, no_score: bool, no_match: bool) -> None:
-    """Fetch → score → match storylines."""
+def run(ctx: click.Context, hours: int | None, no_score: bool, no_match: bool,
+        no_rewrite: bool) -> None:
+    """Fetch → score → match → rewrite stale story summaries."""
     pipeline = Pipeline(ctx.obj["config"], ctx.obj["db"], console=console)
 
     async def _go() -> None:
@@ -42,6 +44,8 @@ def run(ctx: click.Context, hours: int | None, no_score: bool, no_match: bool) -
             await pipeline.score_pending()
         if not no_match:
             await pipeline.match_storylines()
+        if not no_rewrite:
+            await pipeline.rewrite_stale_summaries()
 
     asyncio.run(_go())
 

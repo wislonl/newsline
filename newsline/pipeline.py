@@ -17,6 +17,7 @@ import httpx
 from rich.console import Console
 
 from .ai.client import create_client
+from .ai.rewriter import SummaryRewriter
 from .ai.scorer import Scorer
 from .config import Config
 from .db import Database
@@ -129,3 +130,29 @@ class Pipeline:
             f"🧭 Created {new_stories} new stories, attached {attached} follow-ups"
         )
         return new_stories + attached
+
+    async def rewrite_stale_summaries(self) -> int:
+        """Refresh summaries for multi-event stories whose summary has drifted."""
+        stale = self.db.stories_with_stale_summary(min_events=2)
+        if not stale:
+            return 0
+
+        self.console.print(f"📝 Rewriting {len(stale)} stale story summaries")
+        client = create_client(self.config.ai)
+        rewriter = SummaryRewriter(client)
+
+        async def _one(row: dict) -> bool:
+            events = self.db.story_events(row["id"])
+            if len(events) < 2:
+                return False
+            new_summary = await rewriter.rewrite(row["title"], events)
+            if not new_summary:
+                return False
+            when = datetime.now(timezone.utc)
+            self.db.update_story_summary(row["id"], new_summary, when)
+            return True
+
+        results = await asyncio.gather(*(_one(r) for r in stale), return_exceptions=True)
+        done = sum(1 for r in results if r is True)
+        self.console.print(f"📝 Rewrote {done} / {len(stale)} summaries")
+        return done
