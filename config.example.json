@@ -2,27 +2,46 @@
   "ai": {
     "provider": "anthropic",
     "model": "claude-haiku-4-5-20251001",
-    "api_key_env": "ANTHROPIC_API_KEY"
+    "api_key_env": "ANTHROPIC_API_KEY",
+    "language": "en"
   },
   "filtering": {
     "time_window_hours": 24,
-    "ai_score_threshold": 6.0
+    "ai_score_threshold": 6.0,
+    "dormant_after_days": 30
   },
   "sources": {
     "rss": [
-      { "name": "Simon Willison", "url": "https://simonwillison.net/atom/everything/" },
-      { "name": "Anthropic News", "url": "https://www.anthropic.com/news/rss.xml" }
+      { "name": "Simon Willison",    "url": "https://simonwillison.net/atom/everything/" },
+      { "name": "GitHub Trending",   "url": "https://mshibanami.github.io/GitHubTrendingRSS/daily/all.xml" },
+
+      { "name": "OpenAI News",       "url": "https://openai.com/news/rss.xml" },
+      { "name": "Anthropic News",    "url": "https://www.anthropic.com/news/rss.xml" },
+      { "name": "Google AI Blog",    "url": "https://blog.google/technology/ai/rss/" },
+      { "name": "DeepMind Blog",     "url": "https://deepmind.google/blog/rss.xml" },
+      { "name": "Hugging Face Blog", "url": "https://huggingface.co/blog/feed.xml" },
+
+      { "name": "Latent Space",      "url": "https://www.latent.space/feed" },
+      { "name": "Interconnects",     "url": "https://www.interconnects.ai/feed" },
+      { "name": "Import AI",         "url": "https://jack-clark.net/feed/" },
+      { "name": "The Gradient",      "url": "https://thegradient.pub/rss/" },
+      { "name": "Sebastian Raschka", "url": "https://magazine.sebastianraschka.com/feed" },
+
+      { "name": "SemiAnalysis",      "url": "https://semianalysis.com/feed/" },
+      { "name": "ServeTheHome",      "url": "https://www.servethehome.com/feed/" },
+      { "name": "Phoronix",          "url": "https://www.phoronix.com/rss.php" }
     ],
     "hackernews": {
       "enabled": true,
-      "top_n": 30,
+      "top_n": 50,
       "min_points": 50
     },
     "reddit": {
       "enabled": false,
       "subreddits": [
         { "subreddit": "MachineLearning", "sort": "hot", "fetch_limit": 25, "min_score": 50 },
-        { "subreddit": "LocalLLaMA",      "sort": "hot", "fetch_limit": 25, "min_score": 50 }
+        { "subreddit": "LocalLLaMA",      "sort": "hot", "fetch_limit": 25, "min_score": 30 },
+        { "subreddit": "hardware",        "sort": "hot", "fetch_limit": 25, "min_score": 100 }
       ]
     }
   }
