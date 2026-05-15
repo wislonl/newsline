@@ -75,6 +75,11 @@ final class AppModel: ObservableObject {
     private var watcher: DBWatcher?
     private var statusClearTask: Task<Void, Never>?
 
+    /// Model name parsed out of config.json at startup.
+    /// Click on the toolbar chip opens config.json so the user can edit it.
+    @Published private(set) var modelName: String = "—"
+    private(set) var configJSONURL: URL?
+
     /// Last story dismissed, retained briefly so the user can hit "撤销".
     struct DismissUndo: Equatable {
         let storyID: String
@@ -196,6 +201,28 @@ final class AppModel: ObservableObject {
         // Pre-warm the chat sidecar in the background so the first user
         // question doesn't pay the 1-2s health-check wait.
         Task { [sidecar] in _ = try? await sidecar.ensureRunning() }
+
+        // Load the model name out of config.json for the toolbar chip.
+        loadModelFromConfig()
+    }
+
+    private func loadModelFromConfig() {
+        let path = ChatService.projectDir() + "/config.json"
+        configJSONURL = URL(fileURLWithPath: path)
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ai = obj["ai"] as? [String: Any],
+              let model = ai["model"] as? String else {
+            modelName = "—"
+            return
+        }
+        modelName = model
+    }
+
+    /// Open config.json in the user's default editor.
+    func openConfigInEditor() {
+        guard let url = configJSONURL else { return }
+        NSWorkspace.shared.open(url)
     }
 
     deinit {

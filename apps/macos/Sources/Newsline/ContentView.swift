@@ -53,6 +53,20 @@ struct ContentView: View {
                 pipelineStatusView
             }
             ToolbarItem(placement: .primaryAction) {
+                Button(action: model.openConfigInEditor) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cpu")
+                        Text(model.modelName)
+                            .font(.caption).monospaced()
+                            .lineLimit(1)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(.secondary.opacity(0.15), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help(L10n.modelChipTooltip)
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button(action: model.runPipeline) {
                     if model.pipelineRunning {
                         ProgressView().controlSize(.small)

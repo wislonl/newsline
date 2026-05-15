@@ -10,6 +10,7 @@
 #   news digest [--days N]  markdown digest of recent storylines
 #   news kick               trigger the daily LaunchAgent right now
 #   news log                tail the daemon log
+#   news doctor             validate config, API key, LLM round-trip, DB
 #   news where              print the data dir
 #   news build              build a Newsline.app bundle (no Xcode)
 #   news install            symlink the .app into ~/Applications
@@ -46,7 +47,7 @@ case "$cmd" in
         exec "$PROJECT_DIR/scripts/install-app.sh"
         ;;
     -h|--help|help)
-        sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+        sed -n '2,16p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
         ;;
     *)
         cd "$PROJECT_DIR"

@@ -315,6 +315,15 @@ def serve(ctx: click.Context, port: int) -> None:
 
 
 @cli.command()
+@click.pass_context
+def doctor(ctx: click.Context) -> None:
+    """Validate config, API key, LLM round-trip, and local DB."""
+    from . import doctor as doctor_mod
+    rc = doctor_mod.main()
+    raise SystemExit(rc)
+
+
+@cli.command()
 def where() -> None:
     """Print the local data directory."""
     d = default_data_dir()

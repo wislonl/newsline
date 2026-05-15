@@ -63,6 +63,9 @@ enum L10n {
         isChinese ? "标签：\(tag)" : "Tag: \(tag)"
     }
     static var clearTagFilter: String { isChinese ? "清除标签筛选" : "Clear tag filter" }
+    static var modelChipTooltip: String {
+        isChinese ? "当前模型 · 点击编辑 config.json" : "Current model · click to edit config.json"
+    }
 
     // Chat
     static var chatHeader: String { isChinese ? "针对这个故事提问" : "Ask about this story" }
