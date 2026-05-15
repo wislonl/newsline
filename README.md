@@ -117,6 +117,56 @@ App keyboard shortcuts: `j` / `k` next/prev, `space` advance, `Enter` open origi
 
 See [`config.example.json`](config.example.json) for the full schema.
 
+## Switching models / providers
+
+Three built-in providers: `anthropic`, `openai`, `minimax`.
+
+**Just change the model name** (same provider):
+
+```jsonc
+{ "ai": { "provider": "anthropic", "model": "claude-sonnet-4-5-20251022",
+          "api_key_env": "ANTHROPIC_API_KEY" } }
+```
+
+**Use any OpenAI-compatible API without writing code** — set `provider: "openai"` and a `base_url`. DeepSeek, Doubao, Together, Groq, Moonshot, OpenRouter, your own proxy, etc. all work:
+
+```jsonc
+// DeepSeek
+{ "ai": { "provider": "openai", "model": "deepseek-chat",
+          "base_url": "https://api.deepseek.com/v1",
+          "api_key_env": "DEEPSEEK_API_KEY" } }
+
+// Groq
+{ "ai": { "provider": "openai", "model": "llama-3.3-70b-versatile",
+          "base_url": "https://api.groq.com/openai/v1",
+          "api_key_env": "GROQ_API_KEY" } }
+
+// Doubao (Volcengine Ark)
+{ "ai": { "provider": "openai", "model": "doubao-pro-32k",
+          "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+          "api_key_env": "DOUBAO_API_KEY" } }
+```
+
+**MiniMax has two non-interchangeable endpoints**:
+
+```jsonc
+// 国内 (platform.minimaxi.com)
+{ "ai": { "provider": "minimax", "model": "MiniMax-M2.7-highspeed",
+          "base_url": "https://api.minimaxi.com/v1",
+          "api_key_env": "MINIMAX_API_KEY" } }
+
+// International (api.minimax.io)
+{ "ai": { "provider": "minimax", "model": "MiniMax-M2.7-highspeed",
+          "base_url": "https://api.minimax.io/v1",
+          "api_key_env": "MINIMAX_API_KEY" } }
+```
+
+A domestic key returns 401 against the international endpoint and vice versa. Confirm which console issued your key before setting `base_url`.
+
+**Adding a genuinely new (non-OpenAI-compatible) provider** is a ~20-line class in [`newsline/ai/client.py`](newsline/ai/client.py) implementing `complete_json`, `complete_text`, and `stream_chat`, plus one branch in `create_client()`. The existing `AnthropicClient` and `OpenAIClient` are templates to copy.
+
+After any provider change, drop your key into `.env` and restart the app (or run `news run` from a fresh shell so the daemon picks up the new env).
+
 ## Where your data lives
 
 - Database: `~/Library/Application Support/newsline/newsline.db` (SQLite WAL)
