@@ -309,6 +309,7 @@ struct ContentView: View {
                 }
                 .padding(24)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)   // 标题/摘要/评分理由/timeline 全可选可复制
             }
         } else {
             ContentUnavailableView(L10n.selectStoryTitle,
@@ -320,7 +321,24 @@ struct ContentView: View {
 
 private struct StoryRowItem: View {
     let story: StoryRow
+
+    private func copy(_ s: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(s, forType: .string)
+    }
+
     var body: some View {
+        rowContent
+            .contextMenu {
+                Button(L10n.copyTitle) { copy(story.title) }
+                if let summary = story.summary, !summary.isEmpty {
+                    Button(L10n.copySummary) { copy(summary) }
+                }
+            }
+    }
+
+    private var rowContent: some View {
         HStack(alignment: .top, spacing: 8) {
             SourceBadge(source: story.leadSource)
                 .padding(.top, 3)

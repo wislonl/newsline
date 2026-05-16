@@ -66,6 +66,9 @@ enum L10n {
     static var modelChipTooltip: String {
         isChinese ? "当前模型 · 点击编辑 config.json" : "Current model · click to edit config.json"
     }
+    static var copyTitle: String { isChinese ? "复制标题" : "Copy Title" }
+    static var copyLink: String { isChinese ? "复制链接" : "Copy Link" }
+    static var copySummary: String { isChinese ? "复制摘要" : "Copy Summary" }
 
     // Chat
     static var chatHeader: String { isChinese ? "针对这个故事提问" : "Ask about this story" }
