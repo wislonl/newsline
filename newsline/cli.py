@@ -229,6 +229,23 @@ def signals(ctx: click.Context, days: int) -> None:
             )
 
 
+@cli.command(name="rescore")
+@click.confirmation_option(prompt="Clear all scores and re-run the scorer? This costs LLM tokens.")
+@click.pass_context
+def rescore(ctx: click.Context) -> None:
+    """Wipe ai_score on every item and re-run scoring with the current prompt.
+
+    Use after tweaking the scorer rubric: existing items keep their old
+    scores until this is run, so distributions look stale.
+    """
+    db = ctx.obj["db"]
+    pipeline = Pipeline(ctx.obj["config"], db, console=console)
+
+    n = db.clear_ai_scores()
+    console.print(f"🔄 Cleared {n} scores; rescoring…")
+    asyncio.run(pipeline.score_pending())
+
+
 @cli.command(name="retranslate")
 @click.option("--summaries/--no-summaries", default=True, show_default=True)
 @click.option("--titles/--no-titles", default=True, show_default=True)

@@ -183,6 +183,14 @@ class Database:
             )
             return True
 
+    def clear_ai_scores(self) -> int:
+        """Reset ai_score on every item so the scorer picks them up again."""
+        with self.conn() as c:
+            cur = c.execute(
+                "UPDATE content_items SET ai_score = NULL WHERE ai_score IS NOT NULL"
+            )
+            return cur.rowcount
+
     def update_ai_fields(self, item_id: str, *, score: float, reason: str, summary: str,
                         tags: list[str]) -> None:
         with self.conn() as c:
